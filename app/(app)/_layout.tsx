@@ -1,9 +1,29 @@
 import { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions, ScrollView } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Drawer } from 'expo-router/drawer';
-import { useRouter } from 'expo-router';
+import { DrawerToggleButton } from '@react-navigation/drawer';
+import { useRouter, usePathname, useNavigation } from 'expo-router';
 import { useAuthStore } from '../../src/store/authStore';
+
+// Header-left that adapts per screen: a back arrow when there's history to pop,
+// otherwise the drawer hamburger (so root/sidebar screens still open the menu).
+function SmartHeaderLeft() {
+  const navigation = useNavigation();
+  if (navigation.canGoBack()) {
+    return (
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={{ paddingLeft: 14, paddingRight: 6 }}
+      >
+        <Text style={{ color: '#fff', fontSize: 32, lineHeight: 32, marginTop: -3 }}>‹</Text>
+      </TouchableOpacity>
+    );
+  }
+  return <DrawerToggleButton tintColor="#fff" />;
+}
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 // Responsive drawer width: 80% of screen on small phones, capped at 320px on tablets
@@ -12,6 +32,8 @@ const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.8, 320);
 function DrawerContent() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
+  const insets = useSafeAreaInsets();
 
   const menuItems = [
     { label: '📊  Dashboard', route: '/dashboard' },
@@ -34,7 +56,7 @@ function DrawerContent() {
 
   return (
     <View style={styles.drawerContainer}>
-      <View style={styles.userSection}>
+      <View style={[styles.userSection, { paddingTop: insets.top + 20 }]}>
         <View style={styles.avatarCircle}>
           <Text style={styles.avatarText}>
             {user?.first_name?.[0]?.toUpperCase() ?? 'U'}
@@ -49,18 +71,37 @@ function DrawerContent() {
         </View>
       </View>
 
-      <View style={styles.menuSection}>
-        {menuItems.map((item) => (
-          <TouchableOpacity
-            key={item.route}
-            style={styles.menuItem}
-            onPress={() => router.push(item.route as any)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.menuLabel}>{item.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Scrollable menu */}
+      <ScrollView
+        style={styles.menuScroll}
+        contentContainerStyle={styles.menuSection}
+        showsVerticalScrollIndicator={false}
+      >
+        {menuItems.map((item) => {
+          const active = pathname === item.route || pathname.startsWith(item.route + '/');
+          return (
+            <TouchableOpacity
+              key={item.route}
+              style={[styles.menuItem, active && styles.menuItemActive]}
+              onPress={() => router.replace(item.route as any)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.menuLabel, active && styles.menuLabelActive]}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Logout — always visible at bottom */}
+      <TouchableOpacity
+        style={[styles.logoutButton, { marginBottom: insets.bottom + 16 }]}
+        onPress={handleLogout}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.logoutText}>🚪  Logout</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -97,6 +138,7 @@ export default function AppLayout() {
           headerStyle: { backgroundColor: '#1e3a5f' },
           headerTintColor: '#fff',
           headerTitleStyle: { fontWeight: '700' },
+          headerLeft: () => <SmartHeaderLeft />,
           drawerStyle: { width: DRAWER_WIDTH },
           drawerType: 'front',
           overlayColor: 'rgba(0,0,0,0.5)',
@@ -122,16 +164,19 @@ export default function AppLayout() {
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
   drawerContainer: { flex: 1, backgroundColor: '#fff' },
-  userSection: { backgroundColor: '#1e3a5f', padding: 24, paddingTop: 48, alignItems: 'center' },
+  userSection: { backgroundColor: '#1e3a5f', padding: 24, paddingTop: 28, alignItems: 'center' },
   avatarCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#2563eb', alignItems: 'center', justifyContent: 'center', marginBottom: 12, borderWidth: 3, borderColor: '#ffffff40' },
   avatarText: { color: '#fff', fontSize: 26, fontWeight: '700' },
   userName: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 4 },
   userEmail: { color: '#93c5fd', fontSize: 12, marginBottom: 10 },
   roleBadge: { backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
   roleText: { color: '#fff', fontSize: 11, fontWeight: '700', letterSpacing: 1 },
-  menuSection: { flex: 1, paddingTop: 8, paddingHorizontal: 12 },
+  menuScroll: { flex: 1 },
+  menuSection: { paddingTop: 8, paddingHorizontal: 12, paddingBottom: 8 },
   menuItem: { paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginVertical: 2 },
+  menuItemActive: { backgroundColor: '#eef2f8' },
   menuLabel: { fontSize: 15, color: '#1e3a5f', fontWeight: '500' },
-  logoutButton: { margin: 16, padding: 14, backgroundColor: '#fff1f2', borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#fecdd3' },
+  menuLabelActive: { fontWeight: '800' },
+  logoutButton: { marginHorizontal: 16, marginTop: 8, padding: 14, backgroundColor: '#fff1f2', borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#fecdd3' },
   logoutText: { color: '#be123c', fontSize: 15, fontWeight: '600' },
 });

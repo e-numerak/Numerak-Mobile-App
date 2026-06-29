@@ -3,6 +3,8 @@ import { Platform } from 'react-native';
 
 const ACCESS_TOKEN_KEY = 'enumerak_access_token';
 const REFRESH_TOKEN_KEY = 'enumerak_refresh_token';
+const REMEMBERED_EMAIL_KEY = 'enumerak_remembered_email';
+const REMEMBERED_PASSWORD_KEY = 'enumerak_remembered_password';
 
 // Helper functions
 const getItem = (key: string): Promise<string | null> => {
@@ -41,5 +43,24 @@ export const tokenStorage = {
   async clearTokens(): Promise<void> {
     await deleteItem(ACCESS_TOKEN_KEY);
     await deleteItem(REFRESH_TOKEN_KEY);
+  },
+
+  // ── Remember me — email + password, stored in the encrypted SecureStore
+  // (device keychain/keystore). Only saved when the user ticks "Remember me".
+  async getRememberedCredentials(): Promise<{ email: string; password: string } | null> {
+    const email = await getItem(REMEMBERED_EMAIL_KEY);
+    if (!email) return null;
+    const password = (await getItem(REMEMBERED_PASSWORD_KEY)) ?? '';
+    return { email, password };
+  },
+
+  async setRememberedCredentials(email: string, password: string): Promise<void> {
+    await setItem(REMEMBERED_EMAIL_KEY, email);
+    await setItem(REMEMBERED_PASSWORD_KEY, password);
+  },
+
+  async clearRememberedCredentials(): Promise<void> {
+    await deleteItem(REMEMBERED_EMAIL_KEY);
+    await deleteItem(REMEMBERED_PASSWORD_KEY);
   },
 };
