@@ -228,6 +228,18 @@ export default function CompanyDetailScreen() {
             <Text style={styles.membersLinkArrow}>→</Text>
           </TouchableOpacity>
         )}
+        
+        {/* ── Customers shortcut ── */}
+        {!isEditing && (
+          <TouchableOpacity
+            style={styles.membersLink}
+            onPress={() => router.push(`/companies/${companyId}/customers` as any)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.membersLinkText}>🧑‍💼 View customers</Text>
+            <Text style={styles.membersLinkArrow}>›</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ── Action buttons ── */}
         {isEditing ? (

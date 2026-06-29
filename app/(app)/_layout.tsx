@@ -16,6 +16,7 @@ function DrawerContent() {
   const menuItems = [
     { label: '📊  Dashboard', route: '/dashboard' },
     { label: '🏢  Companies', route: '/companies' },
+    { label: '🧑‍💼  Customers', route: '/customers' },
     { label: '🧾  Invoices', route: '/invoices' },
     { label: '📥  Inbound', route: '/inbound' },
     { label: '📈  Reports', route: '/reports' },
@@ -104,6 +105,7 @@ export default function AppLayout() {
       >
         <Drawer.Screen name="dashboard" options={{ title: 'Dashboard' }} />
         <Drawer.Screen name="companies/index" options={{ title: 'Companies' }} />
+        <Drawer.Screen name="customers/index" options={{ title: 'Customers' }} />
         <Drawer.Screen name="invoices/index" options={{ title: 'Invoices' }} />
         <Drawer.Screen name="inbound/index" options={{ title: 'Inbound' }} />
         <Drawer.Screen name="reports/index" options={{ title: 'Reports' }} />

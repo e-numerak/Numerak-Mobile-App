@@ -10,18 +10,27 @@ enumerak-app/
 │   │   └── mfa-verify.tsx
 │   │
 │   ├── (app)/                   # Logged-in area (protected)
-│   │   ├── _layout.tsx          # ✅ UPDATED — Drawer navigator, auth guard, loading state
-│   │   ├── dashboard.tsx        # ✅ UPDATED — stat cards + quick-action shortcuts
+│   │   ├── _layout.tsx          
+│   │   ├── dashboard.tsx       
 │   │   │
 │   │   ├── companies/
-│   │   │   ├── index.tsx              # ✅ NEW — list (loading/error/empty/data states, FAB)
-│   │   │   ├── create.tsx             # ✅ NEW — Add Company form
+│   │   │   ├── index.tsx                     
+│   │   │   ├── create.tsx                     
 │   │   │   ├── [companyId]/
-│   │   │   │   ├── index.tsx          # ✅ NEW — detail (view/edit toggle, deactivate)
-│   │   │   │   └── members.tsx        # ✅ NEW — members list + add/role-change/remove
+│   │   │   │   ├── index.tsx                 
+│   │   │   │   │                             
+│   │   │   │   ├── members.tsx                
+│   │   │   │   └── customers/
+│   │   │   │       ├── index.tsx             
+│   │   │   │       ├── create.tsx            
+│   │   │   │       └── [customerId]/
+│   │   │   │           └── index.tsx         
+│   │   │
+│   │   ├── customers/
+│   │   │   └── index.tsx                    
 │   │   │
 │   │   ├── invoices/
-│   │   │   ├── index.tsx               # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   ├── index.tsx              
 │   │   │   ├── create.tsx
 │   │   │   ├── [invoiceId]/
 │   │   │   │   ├── index.tsx           # detail
@@ -31,7 +40,7 @@ enumerak-app/
 │   │   │   └── products.tsx
 │   │   │
 │   │   ├── inbound/
-│   │   │   ├── index.tsx               # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   ├── index.tsx              
 │   │   │   ├── stats.tsx
 │   │   │   ├── [pk]/
 │   │   │   │   └── index.tsx
@@ -39,17 +48,17 @@ enumerak-app/
 │   │   │   └── portal.tsx
 │   │   │
 │   │   ├── reports/
-│   │   │   └── index.tsx        # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   └── index.tsx        
 │   │   ├── ocr/
-│   │   │   └── index.tsx        # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   └── index.tsx       
 │   │   ├── fraud/
-│   │   │   └── index.tsx        # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   └── index.tsx       
 │   │   ├── chat/
-│   │   │   └── index.tsx        # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   └── index.tsx        
 │   │   ├── buyers/
-│   │   │   └── index.tsx        # 🟡 PLACEHOLDER (Day 3+)
+│   │   │   └── index.tsx       
 │   │   └── settings/
-│   │       └── profile.tsx      # 🟡 PLACEHOLDER (Day 3+)
+│   │       └── profile.tsx     
 │   │
 │   ├── _layout.tsx               # Root layout (fonts, providers, auth check)
 │   └── index.tsx                 # Splash / redirect logic
@@ -58,7 +67,9 @@ enumerak-app/
 │   ├── api/
 │   │   ├── client.ts              # axios instance + interceptors (token refresh)
 │   │   ├── auth.api.ts
-│   │   ├── companies.api.ts       # ✅ NEW — list/create/detail/update/delete + members CRUD
+│   │   ├── companies.api.ts       
+│   │   ├── customers.api.ts    
+│   │   ├── taxes.api.ts           
 │   │   ├── invoices.api.ts
 │   │   ├── inbound.api.ts
 │   │   ├── reports.api.ts
@@ -69,65 +80,56 @@ enumerak-app/
 │   │
 │   ├── hooks/
 │   │   ├── useAuth.ts
-│   │   ├── useCompanies.ts        # ✅ NEW — React Query wrappers (list/detail/members CRUD)
+│   │   ├── useCompanies.ts       
+│   │   ├── useCustomers.ts       
+│   │   ├── useTaxes.ts            
 │   │   ├── useInvoices.ts
-│   │   └── ...                    # ek hook per module
+│   │   └── ...
 │   │
 │   ├── store/
 │   │   └── authStore.ts           # tokens, user, login state
 │   │
 │   ├── components/
-│   │   ├── ui/                    # Button, Input, Card, Badge, etc.
+│   │   ├── ui/
 │   │   ├── invoice/
 │   │   ├── company/
 │   │   ├── shared/
-│   │   │   └── PlaceholderScreen.tsx  # ✅ NEW — reusable "coming soon" component
+│   │   │   └── PlaceholderScreen.tsx  # reusable "coming soon" component
 │   │
 │   ├── constants/
-│   │   ├── api.ts                 # BASE_URL, endpoints (COMPANY_ENDPOINTS confirmed used)
-│   │   └── peppol.ts              # participant ID, customization IDs etc.
+│   │   ├── api.ts                 
+│   │   └── peppol.ts
 │   │
 │   ├── types/
 │   │   ├── auth.types.ts
-│   │   ├── company.types.ts       # ✅ NEW — Company, CompanyMember, payloads, UserRole (from backend models/serializers/constants)
+│   │   ├── company.types.ts      
+│   │   ├── customer.types.ts     
+│   │   ├── tax.types.ts          
 │   │   ├── invoice.types.ts
 │   │   └── ...
 │   │
 │   └── utils/
-│       ├── formatters.ts          # currency, date, VAT formatting
+│       ├── formatters.ts
 │       └── validators.ts
 │
 ├── assets/
 │   ├── images/
 │   └── fonts/
 │
-├── app.config.ts                  # Expo config (name, icon, env-based API url)
-├── eas.json                       # EAS Build profiles (dev/preview/production)
-├── .env                           # API_BASE_URL=https://api.e-numerak.com
-└── package.json                   # ✅ UPDATED — react-native-worklets added, reanimated pinned to ~4.1.1
+├── app.config.ts
+├── eas.json
+├── .env
+└── package.json                   # react-native-worklets added, reanimated pinned ~4.1.1
 
-
-babel.config.js                    # ✅ UPDATED — removed manual reanimated/plugin (handled by babel-preset-expo)
+babel.config.js                    # manual reanimated/plugin removed (handled by babel-preset-expo)
 
 
 ─────────────────────────────────────────────
-Auth flow (unchanged from Day 1, confirmed working):
+Scope note: Onboarding module (admin invitations + public invite-accept
+flow) intentionally NOT implemented — admin-only / out of scope for this app.
 
-login() success
-      │
-      ▼
-mfa/status/ check karo
-      │
-   ┌──┴───────────────────────┐
-   │                          │
-MFA enabled nahi          MFA enabled hai
-   │                          │
-   ▼                          ▼
-mfa-setup screen        last verified < 24hrs?
-(setup-login + enable-       │         │
-login flow)                YES        NO
-   │                          │         │
-   ▼                          ▼         ▼
-enable hone ke baad      Dashboard   mfa-verify screen
-   │                                      │
-   └──────────────► Dashboard ◄───────────┘
+Known limitation: Customer documents (logo, trn_document) can only be set
+at creation time — CustomerUpdateSerializer doesn't accept file re-uploads,
+so edit mode shows a notice instead of file pickers.
+
+Legend: ✅ done · 🟡 placeholder, scheduled for Day 3+

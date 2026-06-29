@@ -101,6 +101,16 @@ export default function CreateCompanyScreen() {
     return Object.keys(errors).length === 0;
   };
 
+  const clearFieldError = (field: string) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const updated = { ...prev };
+        delete updated[field];
+        return updated;
+      });
+    }
+  };
+
   const handleSubmit = () => {
     if (!validate()) return;
 
@@ -151,7 +161,7 @@ export default function CreateCompanyScreen() {
           label="Company name"
           required
           value={name}
-          onChangeText={setName}
+          onChangeText={(v: string) => { setName(v); clearFieldError('name'); }}
           error={fieldErrors.name}
           placeholder="e.g. Al Merak Tax Consultant"
         />
@@ -160,7 +170,7 @@ export default function CreateCompanyScreen() {
           label="TRN (Tax Registration Number)"
           required
           value={trn}
-          onChangeText={setTrn}
+          onChangeText={(v: string) => { setTrn(v); clearFieldError('trn'); }}
           error={fieldErrors.trn}
           placeholder="15-digit TRN"
           keyboardType="number-pad"
@@ -171,16 +181,16 @@ export default function CreateCompanyScreen() {
           label="Street address"
           required
           value={streetAddress}
-          onChangeText={setStreetAddress}
+          onChangeText={(v: string) => { setStreetAddress(v); clearFieldError('street_address'); }}
           error={fieldErrors.street_address}
-          placeholder="e.g. Sheikh Zayed Road"
+          placeholder="e.g.Office 402 Sheikh Zayed Road"
         />
 
         <Field
           label="City"
           required
           value={city}
-          onChangeText={setCity}
+          onChangeText={(v: string) => { setCity(v); clearFieldError('city'); }}
           error={fieldErrors.city}
           placeholder="e.g. Dubai"
         />

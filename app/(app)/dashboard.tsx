@@ -74,7 +74,7 @@ export default function DashboardScreen() {
           >
             <Text style={styles.shortcutIcon}>{item.icon}</Text>
             <Text style={styles.shortcutLabel}>{item.label}</Text>
-            <Text style={styles.shortcutArrow}>→</Text>
+            <Text style={styles.shortcutArrow}>›</Text>
           </TouchableOpacity>
         ))}
       </View>

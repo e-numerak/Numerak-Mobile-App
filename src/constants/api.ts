@@ -52,6 +52,23 @@ export const CUSTOMERS_URL = `${API_URL}/customers/`;
 export const TAXES_URL = `${API_URL}/taxes/`;
 export const ONBOARDING_URL = `${API_URL}/onboarding/`;
 
+
+// ───────────────────────────────────────────
+// Taxes — /api/v1/Tax/
+// ───────────────────────────────────────────
+export const TAX_ENDPOINTS = {
+  rates: `${API_URL}/taxes/rates/`,
+  calculate: `${API_URL}/taxes/calculate/`,
+};
+
+// ───────────────────────────────────────────
+// Customers — /api/v1/customers/
+// ───────────────────────────────────────────
+export const CUSTOMER_ENDPOINTS = {
+  list: `${API_URL}/customers/`,
+  detail: (customerId: string) => `${API_URL}/customers/${customerId}/`,
+};
+
 // ───────────────────────────────────────────
 // Invoices — /api/v1/invoices/
 // ───────────────────────────────────────────
@@ -76,6 +93,7 @@ export const INVOICE_ENDPOINTS = {
   gapReport: `${API_URL}/invoices/gap-report/`,
   products: `${API_URL}/invoices/products/`,
   productDetail: (productId: string) => `${API_URL}/invoices/products/${productId}/`,
+  draftAutosave: `${API_URL}/invoices/draft-autosave/`,
 };
 
 // ───────────────────────────────────────────
