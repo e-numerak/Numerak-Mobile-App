@@ -94,6 +94,11 @@ export const INVOICE_ENDPOINTS = {
   products: `${API_URL}/invoices/products/`,
   productDetail: (productId: string) => `${API_URL}/invoices/products/${productId}/`,
   draftAutosave: `${API_URL}/invoices/draft-autosave/`,
+  // Workflow + per-invoice fraud
+  workflowEvaluate: (invoiceId: string) => `${API_URL}/invoices/${invoiceId}/workflow/evaluate/`,
+  fraud: (invoiceId: string) => `${API_URL}/invoices/${invoiceId}/fraud/`,
+  fraudAnalyze: (invoiceId: string) => `${API_URL}/invoices/${invoiceId}/fraud/analyze/`,
+  fraudResolve: (invoiceId: string) => `${API_URL}/invoices/${invoiceId}/fraud/resolve/`,
 };
 
 // ───────────────────────────────────────────

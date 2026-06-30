@@ -50,6 +50,7 @@ export interface Customer {
   is_active: boolean;            // read-only
   created_at: string;            // read-only
   updated_at: string;            // read-only
+  
 }
 
 // ───────────────────────────────────────────

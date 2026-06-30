@@ -13,9 +13,15 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { useCompanies } from '../../../src/hooks/useCompanies';
 import { useCustomers } from '../../../src/hooks/useCustomers';
 import { useCreateInvoice } from '../../../src/hooks/useInvoices';
+import {
+  fetchDraftAutosave,
+  saveDraftAutosave,
+  deleteDraftAutosave,
+} from '../../../src/api/invoices.api';
 import type {
   InvoiceType,
   TransactionType,
@@ -24,7 +30,10 @@ import type {
   PaymentMeansCode,
   CreateInvoicePayload,
   InlineInvoiceItemPayload,
+  InvoiceFormType,
 } from '../../../src/types/invoice.types';
+
+const FORM_TYPE: InvoiceFormType = 'new';
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
@@ -169,6 +178,82 @@ export default function CreateInvoiceScreen() {
     setItems((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
   }
 
+  // ── Draft autosave (server scratchpad) ─────────────────────────────────────
+  const [draftChecked, setDraftChecked] = useState(false);
+  const [restorePayload, setRestorePayload] = useState<Record<string, unknown> | null>(null);
+  const [autoStatus, setAutoStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  function buildSnapshot() {
+    return {
+      customerId, invoiceType, transactionType, issueDate, dueDate,
+      supplyDate, supplyDateEnd, contractReference, currency, discountAmount,
+      paymentMeansCode, referenceNumber, purchaseOrderNumber, notes, items,
+    };
+  }
+
+  function hydrate(p: any) {
+    if (!p) return;
+    if (p.customerId != null) setCustomerId(p.customerId);
+    if (p.invoiceType) setInvoiceType(p.invoiceType);
+    if (p.transactionType) setTransactionType(p.transactionType);
+    if (p.issueDate != null) setIssueDate(p.issueDate);
+    if (p.dueDate != null) setDueDate(p.dueDate);
+    if (p.supplyDate != null) setSupplyDate(p.supplyDate);
+    if (p.supplyDateEnd != null) setSupplyDateEnd(p.supplyDateEnd);
+    if (p.contractReference != null) setContractReference(p.contractReference);
+    if (p.currency) setCurrency(p.currency);
+    if (p.discountAmount != null) setDiscountAmount(p.discountAmount);
+    if (p.paymentMeansCode) setPaymentMeansCode(p.paymentMeansCode);
+    if (p.referenceNumber != null) setReferenceNumber(p.referenceNumber);
+    if (p.purchaseOrderNumber != null) setPurchaseOrderNumber(p.purchaseOrderNumber);
+    if (p.notes != null) setNotes(p.notes);
+    if (Array.isArray(p.items) && p.items.length) setItems(p.items);
+  }
+
+  // Check the server for an unsaved draft, once the company is known.
+  useEffect(() => {
+    if (!companyId || draftChecked) return;
+    let cancelled = false;
+    fetchDraftAutosave(companyId, FORM_TYPE)
+      .then((d) => {
+        if (cancelled) return;
+        if (d?.exists && d.payload && Object.keys(d.payload).length > 0) {
+          setRestorePayload(d.payload as Record<string, unknown>);
+        }
+        setDraftChecked(true);
+      })
+      .catch(() => {
+        if (!cancelled) setDraftChecked(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, draftChecked]);
+
+  const hasContent =
+    !!customerId ||
+    notes.trim().length > 0 ||
+    items.some((it) => it.description.trim() || it.unit_price.trim() || it.item_name.trim());
+
+  // Debounced autosave — only after the initial draft check, only when there's
+  // real content, and never while a restore prompt is still pending.
+  useEffect(() => {
+    if (!companyId || !draftChecked || restorePayload || !hasContent) return;
+    setAutoStatus('saving');
+    const t = setTimeout(() => {
+      saveDraftAutosave({ company_id: companyId, form_type: FORM_TYPE, payload: buildSnapshot() })
+        .then(() => setAutoStatus('saved'))
+        .catch(() => setAutoStatus('idle'));
+    }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    companyId, draftChecked, restorePayload, hasContent,
+    customerId, invoiceType, transactionType, issueDate, dueDate, supplyDate,
+    supplyDateEnd, contractReference, currency, discountAmount, paymentMeansCode,
+    referenceNumber, purchaseOrderNumber, notes, items,
+  ]);
+
   // ── Submit ───────────────────────────────────────────────────────────────
   async function handleSubmit() {
     if (!companyId) {
@@ -248,6 +333,8 @@ export default function CreateInvoiceScreen() {
 
     try {
       const created = await createInvoice(payload);
+      // Clear the server scratchpad — this draft is now a real invoice.
+      deleteDraftAutosave(companyId, FORM_TYPE).catch(() => {});
       if (created?.id) {
         router.replace(`/invoices/${created.id}` as any);
       } else {
@@ -268,6 +355,49 @@ export default function CreateInvoiceScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ title: 'Create Invoice' }} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* Resume draft banner */}
+        {restorePayload && (
+          <View style={styles.restoreBanner}>
+            <Feather name="rotate-ccw" size={18} color="#1d4ed8" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.restoreTitle}>Resume your unsaved invoice?</Text>
+              <Text style={styles.restoreSub}>A draft you started earlier was found.</Text>
+            </View>
+            <View style={styles.restoreActions}>
+              <TouchableOpacity
+                onPress={() => {
+                  hydrate(restorePayload);
+                  setRestorePayload(null);
+                }}
+              >
+                <Text style={styles.restoreRestore}>Restore</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setRestorePayload(null);
+                  if (companyId) deleteDraftAutosave(companyId, FORM_TYPE).catch(() => {});
+                }}
+              >
+                <Text style={styles.restoreDiscard}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Autosave status */}
+        {autoStatus !== 'idle' && !restorePayload && (
+          <View style={styles.autoStatusRow}>
+            <Feather
+              name={autoStatus === 'saving' ? 'upload-cloud' : 'check-circle'}
+              size={13}
+              color={autoStatus === 'saving' ? SLATE : '#16a34a'}
+            />
+            <Text style={styles.autoStatusText}>
+              {autoStatus === 'saving' ? 'Saving draft…' : 'Draft autosaved'}
+            </Text>
+          </View>
+        )}
+
         {/* Company */}
         {companies && companies.length > 1 ? (
           <View style={styles.section}>
@@ -667,6 +797,20 @@ function TotalRow({ label, value, grand }: { label: string; value: string; grand
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
   content: { padding: 16 },
+
+  restoreBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#eff6ff', borderColor: '#bfdbfe', borderWidth: 1,
+    borderRadius: 12, padding: 14, marginBottom: 12,
+  },
+  restoreTitle: { fontSize: 14, fontWeight: '800', color: '#1e3a8a' },
+  restoreSub: { fontSize: 12, color: '#3b82f6', marginTop: 2 },
+  restoreActions: { gap: 10, alignItems: 'flex-end' },
+  restoreRestore: { fontSize: 13, fontWeight: '800', color: '#1d4ed8' },
+  restoreDiscard: { fontSize: 13, fontWeight: '700', color: SLATE },
+
+  autoStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, paddingHorizontal: 2 },
+  autoStatusText: { fontSize: 12, color: SLATE, fontWeight: '600' },
 
   section: { marginBottom: 12 },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: NAVY, marginBottom: 8 },

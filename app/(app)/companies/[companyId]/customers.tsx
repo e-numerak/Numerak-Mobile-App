@@ -15,10 +15,12 @@ import type { Customer } from '../../../../src/types/customer.types';
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
+const MUTED = '#94a3b8';
 const BORDER = '#e8edf3';
 const BG = '#f6f8fb';
 const GREEN = '#16a34a';
 const AMBER = '#d97706';
+const ERROR = '#dc2626';
 
 export default function CompanyCustomersScreen() {
   const { companyId } = useLocalSearchParams<{ companyId: string }>();
@@ -43,7 +45,7 @@ export default function CompanyCustomersScreen() {
             value={search}
             onChangeText={setSearch}
             placeholder="Search by name, TRN, or email"
-            placeholderTextColor="#94a3b8"
+            placeholderTextColor={MUTED}
           />
         </View>
 
@@ -53,15 +55,17 @@ export default function CompanyCustomersScreen() {
           </View>
         ) : isError ? (
           <View style={styles.centerScreen}>
-            <Text style={styles.errorIcon}>⚠️</Text>
             <Text style={styles.errorTitle}>Couldn't load customers</Text>
+            <Text style={styles.errorMessage}>Please check your connection and try again.</Text>
             <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
               <Text style={styles.retryButtonText}>Try again</Text>
             </TouchableOpacity>
           </View>
         ) : customers.length === 0 ? (
           <View style={styles.centerScreen}>
-            <Text style={styles.errorIcon}>🧑‍💼</Text>
+            <View style={styles.emptyIconCircle}>
+              <Text style={styles.emptyIconText}>C</Text>
+            </View>
             <Text style={styles.errorTitle}>
               {search ? 'No matching customers' : 'No customers yet'}
             </Text>
@@ -74,8 +78,9 @@ export default function CompanyCustomersScreen() {
               <TouchableOpacity
                 style={styles.addButton}
                 onPress={() => router.push(`/companies/${companyId}/customers/create` as any)}
+                activeOpacity={0.85}
               >
-                <Text style={styles.addButtonText}>+ Add Customer</Text>
+                <Text style={styles.addButtonText}>Add Customer</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -120,7 +125,7 @@ function CustomerCard({
   router: ReturnType<typeof useRouter>;
 }) {
   const completionColor =
-    customer.completion_percent >= 100 ? GREEN : customer.completion_percent >= 50 ? AMBER : '#dc2626';
+    customer.completion_percent >= 100 ? GREEN : customer.completion_percent >= 50 ? AMBER : ERROR;
 
   return (
     <TouchableOpacity
@@ -147,9 +152,9 @@ function CustomerCard({
 
       <View style={styles.cardFooter}>
         <Text style={styles.cardFooterText}>
-          {customer.trn ? `TRN: ${customer.trn}` : customer.vat_number ? `VAT: ${customer.vat_number}` : 'No tax ID'}
+          {customer.trn ? `TRN ${customer.trn}` : customer.vat_number ? `VAT ${customer.vat_number}` : 'No tax ID'}
         </Text>
-        <Text style={styles.cardFooterText}>📍 {customer.country}</Text>
+        <Text style={styles.cardFooterText}>{customer.country}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -157,7 +162,7 @@ function CustomerCard({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  centerScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG, padding: 24 },
+  centerScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG, padding: 32 },
 
   searchWrap: { padding: 16, paddingBottom: 8, backgroundColor: BG },
   searchInput: {
@@ -166,7 +171,7 @@ const styles = StyleSheet.create({
     borderColor: BORDER,
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     fontSize: 14,
     color: '#1e293b',
   },
@@ -190,27 +195,32 @@ const styles = StyleSheet.create({
   cardHeaderText: { flex: 1 },
   customerName: { fontSize: 16, fontWeight: '700', color: NAVY },
   customerType: { fontSize: 12, color: SLATE, marginTop: 2 },
-  completionBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  completionBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
   completionText: { fontSize: 11, fontWeight: '700' },
 
   cardFooter: {
     flexDirection: 'row', justifyContent: 'space-between',
-    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: BORDER,
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9',
   },
-  cardFooterText: { fontSize: 12, color: SLATE },
+  cardFooterText: { fontSize: 12.5, color: SLATE, fontWeight: '500' },
 
   fab: {
     position: 'absolute', bottom: 24, right: 24, width: 56, height: 56, borderRadius: 28,
     backgroundColor: NAVY, alignItems: 'center', justifyContent: 'center',
     shadowColor: '#0f172a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
   },
-  fabText: { color: '#fff', fontSize: 28, fontWeight: '400', marginTop: -2 },
+  fabText: { color: '#fff', fontSize: 26, fontWeight: '400', marginTop: -2 },
 
-  errorIcon: { fontSize: 48, marginBottom: 16 },
-  errorTitle: { fontSize: 18, fontWeight: '700', color: NAVY, marginBottom: 8 },
-  errorMessage: { fontSize: 14, color: SLATE, textAlign: 'center', marginBottom: 20 },
-  retryButton: { backgroundColor: NAVY, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
+  emptyIconCircle: {
+    width: 56, height: 56, borderRadius: 16, backgroundColor: '#eef1f5',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  emptyIconText: { fontSize: 22, fontWeight: '700', color: SLATE },
+
+  errorTitle: { fontSize: 17, fontWeight: '700', color: NAVY, marginBottom: 6, textAlign: 'center' },
+  errorMessage: { fontSize: 13.5, color: SLATE, textAlign: 'center', marginBottom: 22, lineHeight: 19 },
+  retryButton: { backgroundColor: NAVY, paddingHorizontal: 28, paddingVertical: 13, borderRadius: 12 },
   retryButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  addButton: { backgroundColor: NAVY, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
+  addButton: { backgroundColor: NAVY, paddingHorizontal: 28, paddingVertical: 13, borderRadius: 12 },
   addButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 });

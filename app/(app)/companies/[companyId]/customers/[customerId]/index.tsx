@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import {
   useCustomer,
@@ -174,7 +176,7 @@ export default function CustomerDetailScreen() {
   if (isError || !customer) {
     return (
       <View style={styles.centerScreen}>
-        <Text style={styles.errorIcon}>⚠️</Text>
+        <Feather name="alert-triangle" size={44} color={ERROR} style={{ marginBottom: 14 }} />
         <Text style={styles.errorTitle}>Couldn't load this customer</Text>
         <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
           <Text style={styles.retryButtonText}>Try again</Text>
@@ -220,15 +222,42 @@ export default function CustomerDetailScreen() {
           )}
         </View>
 
-        {/* ── Completeness banner ── */}
-        {!isEditing && !customer.is_complete && (
-          <View style={[styles.completenessCard, { borderColor: `${completionColor}40` }]}>
-            <Text style={[styles.completenessPercent, { color: completionColor }]}>
-              {customer.completion_percent}% complete
-            </Text>
-            <Text style={styles.completenessLabel}>
-              Missing: {customer.missing_fields.join(', ')}
-            </Text>
+        {/* ── Completeness progress ── */}
+        {!isEditing && (
+          <View
+            style={[
+              styles.completenessCard,
+              { backgroundColor: `${completionColor}10`, borderColor: `${completionColor}33` },
+            ]}
+          >
+            <View style={styles.completenessTop}>
+              <View style={styles.completenessTitleRow}>
+                <Feather
+                  name={customer.is_complete ? 'check-circle' : 'alert-circle'}
+                  size={16}
+                  color={completionColor}
+                />
+                <Text style={[styles.completenessTitle, { color: completionColor }]}>
+                  {customer.is_complete ? 'Profile complete — ready to invoice' : 'Profile incomplete'}
+                </Text>
+              </View>
+              <Text style={[styles.completenessPercent, { color: completionColor }]}>
+                {customer.completion_percent}%
+              </Text>
+            </View>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${customer.completion_percent}%`, backgroundColor: completionColor },
+                ]}
+              />
+            </View>
+            {!customer.is_complete && customer.missing_fields?.length > 0 && (
+              <Text style={styles.completenessLabel}>
+                Missing: {customer.missing_fields.join(', ')}
+              </Text>
+            )}
           </View>
         )}
 
@@ -276,26 +305,50 @@ export default function CustomerDetailScreen() {
 // ───────────────────────────────────────────
 function ViewFields({ customer }: { customer: any }) {
   const rows = [
-    { label: 'Legal name', value: customer.legal_name || '—' },
-    { label: 'TRN', value: customer.trn || '—' },
-    { label: 'VAT number', value: customer.vat_number || '—' },
-    { label: 'Address', value: customer.formatted_address || '—' },
-    { label: 'Email', value: customer.email || '—' },
-    { label: 'Phone', value: customer.phone || '—' },
-    { label: 'PEPPOL endpoint', value: customer.peppol_endpoint || '—' },
-    { label: 'PEPPOL connected', value: customer.is_peppol_connected ? 'Yes' : 'No' },
-    { label: 'Notes', value: customer.notes || '—' },
+    { label: 'Legal name', value: customer.legal_name },
+    { label: 'TRN', value: customer.trn },
+    { label: 'TRN issued', value: customer.trn_issue_date },
+    { label: 'TRN expiry', value: customer.trn_expiry_date },
+    { label: 'VAT number', value: customer.vat_number },
+    { label: 'PEPPOL endpoint', value: customer.peppol_endpoint },
+    { label: 'Address', value: customer.formatted_address },
+    { label: 'Email', value: customer.email },
+    { label: 'Phone', value: customer.phone },
+    { label: 'Notes', value: customer.notes },
   ];
 
+  const openUrl = (url?: string | null) => {
+    if (url) Linking.openURL(url).catch(() => {});
+  };
+
   return (
-    <View style={styles.card}>
-      {rows.map((row) => (
-        <View key={row.label} style={styles.viewRow}>
-          <Text style={styles.viewLabel}>{row.label}</Text>
-          <Text style={styles.viewValue}>{row.value}</Text>
+    <>
+      <View style={styles.card}>
+        {rows.map((row) => (
+          <View key={row.label} style={styles.viewRow}>
+            <Text style={styles.viewLabel}>{row.label}</Text>
+            <Text style={styles.viewValue}>{row.value || '—'}</Text>
+          </View>
+        ))}
+      </View>
+
+      {(customer.trn_document || customer.logo) && (
+        <View style={styles.docsRow}>
+          {customer.trn_document && (
+            <TouchableOpacity style={styles.docLink} onPress={() => openUrl(customer.trn_document)}>
+              <Feather name="external-link" size={15} color="#2563eb" />
+              <Text style={styles.docLinkText}>View TRN document</Text>
+            </TouchableOpacity>
+          )}
+          {customer.logo && (
+            <TouchableOpacity style={styles.docLink} onPress={() => openUrl(customer.logo)}>
+              <Feather name="external-link" size={15} color="#2563eb" />
+              <Text style={styles.docLinkText}>View logo</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      ))}
-    </View>
+      )}
+    </>
   );
 }
 
@@ -342,8 +395,9 @@ function EditFields({
       <Field label="Notes" value={form.notes} onChangeText={(v: string) => update('notes', v)} multiline />
 
       <View style={styles.noticeBox}>
+        <Feather name="info" size={15} color="#1d4ed8" style={{ marginTop: 1 }} />
         <Text style={styles.noticeText}>
-          ℹ️ Logo and TRN document cannot be changed here. Deactivate and re-add the customer if you need to update them.
+          Logo and TRN document cannot be changed here. Deactivate and re-add the customer if you need to update them.
         </Text>
       </View>
     </View>
@@ -390,16 +444,30 @@ const styles = StyleSheet.create({
   inactiveBadgeText: { fontSize: 10, fontWeight: '700', color: ERROR },
 
   completenessCard: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1,
+    borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1,
   },
-  completenessPercent: { fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  completenessLabel: { fontSize: 12, color: SLATE },
+  completenessTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  completenessTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 },
+  completenessTitle: { fontSize: 14, fontWeight: '700' },
+  completenessPercent: { fontSize: 15, fontWeight: '800' },
+  completenessLabel: { fontSize: 12, color: SLATE, marginTop: 8 },
+  progressTrack: {
+    height: 8, borderRadius: 999, backgroundColor: 'rgba(15,23,42,0.08)', marginTop: 10, overflow: 'hidden',
+  },
+  progressFill: { height: 8, borderRadius: 999 },
 
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER },
+  card: { backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 14, borderWidth: 1, borderColor: BORDER },
 
-  viewRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  viewLabel: { fontSize: 12, color: SLATE, marginBottom: 3, fontWeight: '500' },
-  viewValue: { fontSize: 15, color: '#1e293b', fontWeight: '500' },
+  viewRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', gap: 16,
+  },
+  viewLabel: { fontSize: 14, color: SLATE },
+  viewValue: { fontSize: 14, color: '#0f172a', fontWeight: '600', flex: 1, textAlign: 'right' },
+
+  docsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, marginBottom: 16, paddingHorizontal: 4 },
+  docLink: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  docLinkText: { fontSize: 14, color: '#2563eb', fontWeight: '700' },
 
   fieldWrap: { marginBottom: 16 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: NAVY, marginBottom: 6 },
@@ -417,8 +485,8 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: SLATE, fontWeight: '500' },
   chipTextActive: { color: '#fff' },
 
-  noticeBox: { backgroundColor: '#eff6ff', borderRadius: 10, padding: 12, marginTop: 4 },
-  noticeText: { fontSize: 12, color: '#1d4ed8', lineHeight: 18 },
+  noticeBox: { flexDirection: 'row', gap: 8, backgroundColor: '#eff6ff', borderRadius: 10, padding: 12, marginTop: 4 },
+  noticeText: { flex: 1, fontSize: 12, color: '#1d4ed8', lineHeight: 18 },
 
   editActions: { flexDirection: 'row', gap: 12 },
   cancelButton: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: BORDER, backgroundColor: '#fff' },

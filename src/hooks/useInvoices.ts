@@ -15,6 +15,18 @@ import {
   updateInvoiceItem,
   deleteInvoiceItem,
   fetchInvoiceDashboard,
+  fetchInvoiceVatSummary,
+  fetchInvoiceGapReport,
+  fetchInvoicePayments,
+  recordInvoicePayment,
+  fetchProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  evaluateWorkflow,
+  analyzeFraud,
+  fetchFraudAlert,
+  resolveFraud,
 } from '../api/invoices.api';
 import type {
   CreateInvoicePayload,
@@ -22,6 +34,10 @@ import type {
   InvoiceFilterParams,
   CreateInvoiceItemPayload,
   UpdateInvoiceItemPayload,
+  RecordPaymentPayload,
+  CreateProductPayload,
+  UpdateProductPayload,
+  ResolveFraudPayload,
 } from '../types/invoice.types';
 
 // ───────────────────────────────────────────
@@ -204,6 +220,17 @@ export function useDeleteInvoiceItem(invoiceId: string) {
 }
 
 // ───────────────────────────────────────────
+// VAT summary — breakdown by rate type (read-only)
+// ───────────────────────────────────────────
+export function useInvoiceVatSummary(invoiceId: string) {
+  return useQuery({
+    queryKey: ['invoices', 'vat-summary', invoiceId],
+    queryFn: () => fetchInvoiceVatSummary(invoiceId),
+    enabled: !!invoiceId,
+  });
+}
+
+// ───────────────────────────────────────────
 // Dashboard — per-company invoice stats
 // ───────────────────────────────────────────
 export function useInvoiceDashboard(companyId: string) {
@@ -215,7 +242,123 @@ export function useInvoiceDashboard(companyId: string) {
 }
 
 // ───────────────────────────────────────────
-// Products / Payments / Export / Gap-report /
-// Draft-autosave / Workflow / Fraud hooks will be appended here as we reach
-// their respective steps.
+// Gap report — UAE Article 70 sequence-gap audit (per company)
 // ───────────────────────────────────────────
+export function useInvoiceGapReport(companyId: string) {
+  return useQuery({
+    queryKey: ['invoices', 'gap-report', companyId],
+    queryFn: () => fetchInvoiceGapReport(companyId),
+    enabled: !!companyId,
+  });
+}
+
+// ───────────────────────────────────────────
+// Product catalog — list (global + company) / create / update / delete.
+// This app only manages company-scoped products; global items are admin-managed
+// and shown read-only.
+// ───────────────────────────────────────────
+export const productKeys = {
+  list: (companyId: string) => ['products', companyId] as const,
+};
+
+export function useProducts(companyId: string) {
+  return useQuery({
+    queryKey: productKeys.list(companyId),
+    queryFn: () => fetchProducts({ company_id: companyId }),
+    enabled: !!companyId,
+  });
+}
+
+export function useCreateProduct(companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateProductPayload) => createProduct(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productKeys.list(companyId) });
+    },
+  });
+}
+
+export function useUpdateProduct(companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ productId, payload }: { productId: string; payload: UpdateProductPayload }) =>
+      updateProduct(productId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productKeys.list(companyId) });
+    },
+  });
+}
+
+export function useDeleteProduct(companyId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (productId: string) => deleteProduct(productId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productKeys.list(companyId) });
+    },
+  });
+}
+
+// ───────────────────────────────────────────
+// Payments (supplier side) — history + record.
+// Recording a payment changes amount_paid / balance_due / status on the
+// invoice, so it invalidates the invoice detail and lists too.
+// ───────────────────────────────────────────
+export function useInvoicePayments(invoiceId: string) {
+  return useQuery({
+    queryKey: ['invoices', 'payments', invoiceId],
+    queryFn: () => fetchInvoicePayments(invoiceId),
+    enabled: !!invoiceId,
+  });
+}
+
+export function useRecordPayment(invoiceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RecordPaymentPayload) => recordInvoicePayment(invoiceId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'payments', invoiceId] });
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.detail(invoiceId) });
+      queryClient.invalidateQueries({ queryKey: invoiceKeys.allLists });
+    },
+  });
+}
+
+// ───────────────────────────────────────────
+// Workflow automation + per-invoice fraud detection
+// ───────────────────────────────────────────
+export function useEvaluateWorkflow(invoiceId: string) {
+  return useMutation({
+    mutationFn: () => evaluateWorkflow(invoiceId),
+  });
+}
+
+export function useFraudAlert(invoiceId: string) {
+  return useQuery({
+    queryKey: ['invoices', 'fraud', invoiceId],
+    queryFn: () => fetchFraudAlert(invoiceId),
+    enabled: !!invoiceId,
+    retry: false,
+  });
+}
+
+export function useAnalyzeFraud(invoiceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => analyzeFraud(invoiceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'fraud', invoiceId] });
+    },
+  });
+}
+
+export function useResolveFraud(invoiceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ResolveFraudPayload) => resolveFraud(invoiceId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', 'fraud', invoiceId] });
+    },
+  });
+}

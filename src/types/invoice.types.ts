@@ -446,3 +446,46 @@ export interface UpdateProductPayload {
 export interface ProductFilterParams {
   company_id: string;
 }
+
+// ───────────────────────────────────────────
+// Fraud detection — matches InvoiceFraudAlert (per-invoice)
+// ───────────────────────────────────────────
+export type FraudRiskLevel = 'low' | 'medium' | 'high';
+export type FraudAutoAction = 'none' | 'flag' | 'block' | 'approve';
+
+export interface FraudFlag {
+  code: string;
+  description: string;
+  severity?: string;
+  category?: string;
+}
+
+export interface FraudAlert {
+  id: string;
+  risk_score: number;            // 0.0 – 1.0
+  risk_level: FraudRiskLevel;
+  auto_action: FraudAutoAction;
+  flags_json: FraudFlag[];
+  duplicate_invoice_ids: string[];
+  ai_explanation: string;
+  is_resolved: boolean;
+  resolved_at: string | null;
+  resolution_note: string;
+  analyzed_at: string | null;
+  created_at?: string;
+  [key: string]: unknown;
+}
+
+export interface ResolveFraudPayload {
+  resolution_note?: string;
+}
+
+// ───────────────────────────────────────────
+// Workflow automation — POST /invoices/{id}/workflow/evaluate/
+// Exact shape not confirmed; `action` is the documented key.
+// ───────────────────────────────────────────
+export interface WorkflowResult {
+  action: string;
+  reason?: string;
+  [key: string]: unknown;
+}

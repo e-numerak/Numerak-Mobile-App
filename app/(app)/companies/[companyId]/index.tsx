@@ -20,9 +20,11 @@ import type { Emirate, LegalRegistrationType, UpdateCompanyPayload } from '../..
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
-const BORDER = '#e2e8f0';
+const MUTED = '#94a3b8';
+const BORDER = '#e8edf3';
 const BG = '#f6f8fb';
 const ERROR = '#dc2626';
+const GREEN = '#16a34a';
 
 const EMIRATES: { label: string; value: Emirate }[] = [
   { label: 'Dubai', value: 'dubai' },
@@ -54,7 +56,6 @@ export default function CompanyDetailScreen() {
   const [form, setForm] = useState<UpdateCompanyPayload>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Populate form whenever company data loads (or when entering edit mode)
   useEffect(() => {
     if (company) {
       setForm({
@@ -75,50 +76,53 @@ export default function CompanyDetailScreen() {
     }
   }, [company]);
 
+  const clearFieldError = (field: string) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => {
+        const updated = { ...prev };
+        delete updated[field];
+        return updated;
+      });
+    }
+  };
+
   const update = (key: keyof UpdateCompanyPayload, value: any) => {
     setForm((prev) => ({ ...prev, [key]: value }));
+    clearFieldError(key);
   };
 
   const handleSave = () => {
-  const errors: Record<string, string> = {};
-  if (!form.name?.trim()) errors.name = 'Company name is required.';
-  if (!form.street_address?.trim()) errors.street_address = 'Street address is required.';
-  if (!form.city?.trim()) errors.city = 'City is required.';
-  setFieldErrors(errors);
-  if (Object.keys(errors).length > 0) return;
+    const errors: Record<string, string> = {};
+    if (!form.name?.trim()) errors.name = 'Company name is required.';
+    if (!form.street_address?.trim()) errors.street_address = 'Street address is required.';
+    if (!form.city?.trim()) errors.city = 'City is required.';
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
 
-  // Strip out empty-string optional fields — backend rejects blank strings
-  // for fields like po_box, phone, email, website, legal_registration_id
-  // (only "field missing" is allowed, not "field present but blank").
-  const cleanedForm: UpdateCompanyPayload = {};
-  Object.entries(form).forEach(([key, value]) => {
-    if (value === '' || value === undefined) return; // skip blanks
-    (cleanedForm as any)[key] = value;
-  });
+    const cleanedForm: UpdateCompanyPayload = {};
+    Object.entries(form).forEach(([key, value]) => {
+      if (value === '' || value === undefined) return;
+      (cleanedForm as any)[key] = value;
+    });
 
-  updateCompany(cleanedForm, {
-    onSuccess: () => {
-      setIsEditing(false);
-    },
-    onError: (err: any) => {
-      // Backend shape: { success, error: { code, message, details } }
-      const details = err?.response?.data?.error?.details;
-      if (details && typeof details === 'object') {
-        const flattened: Record<string, string> = {};
-        Object.entries(details).forEach(([key, val]) => {
-          flattened[key] = Array.isArray(val) ? val[0] : String(val);
-        });
-        setFieldErrors(flattened);
-      } else {
-        const message = err?.response?.data?.error?.message ?? 'Could not update company.';
-        Alert.alert('Error', message);
-      }
-    },
-  });
-};
+    updateCompany(cleanedForm, {
+      onSuccess: () => setIsEditing(false),
+      onError: (err: any) => {
+        const details = err?.response?.data?.error?.details;
+        if (details && typeof details === 'object') {
+          const flattened: Record<string, string> = {};
+          Object.entries(details).forEach(([key, val]) => {
+            flattened[key] = Array.isArray(val) ? val[0] : String(val);
+          });
+          setFieldErrors(flattened);
+        } else {
+          Alert.alert('Error', err?.response?.data?.error?.message ?? 'Could not update company.');
+        }
+      },
+    });
+  };
 
   const handleCancel = () => {
-    // Reset form back to original company data
     if (company) {
       setForm({
         name: company.name,
@@ -171,7 +175,6 @@ export default function CompanyDetailScreen() {
   if (isError || !company) {
     return (
       <View style={styles.centerScreen}>
-        <Text style={styles.errorIcon}>⚠️</Text>
         <Text style={styles.errorTitle}>Couldn't load this company</Text>
         <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
           <Text style={styles.retryButtonText}>Try again</Text>
@@ -187,7 +190,7 @@ export default function CompanyDetailScreen() {
           title: isEditing ? 'Edit Company' : company.name,
           headerRight: () =>
             isEditing ? null : (
-              <TouchableOpacity onPress={() => setIsEditing(true)}>
+              <TouchableOpacity onPress={() => setIsEditing(true)} hitSlop={10}>
                 <Text style={styles.headerActionText}>Edit</Text>
               </TouchableOpacity>
             ),
@@ -201,11 +204,19 @@ export default function CompanyDetailScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.companyName}>{company.name}</Text>
-            <Text style={styles.companyTrn}>TRN: {company.trn} (immutable)</Text>
+            <View style={styles.trnRow}>
+              <Text style={styles.trnLabel}>TRN</Text>
+              <Text style={styles.trnValue}>{company.trn}</Text>
+            </View>
           </View>
-          {!company.is_active && (
+          {!company.is_active ? (
             <View style={styles.inactiveBadge}>
               <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
+            </View>
+          ) : (
+            <View style={styles.activeBadge}>
+              <View style={styles.activeDot} />
+              <Text style={styles.activeBadgeText}>Active</Text>
             </View>
           )}
         </View>
@@ -217,28 +228,44 @@ export default function CompanyDetailScreen() {
           <ViewFields company={company} />
         )}
 
-        {/* ── Members shortcut ── */}
+        {/* ── Related sections ── */}
         {!isEditing && (
-          <TouchableOpacity
-            style={styles.membersLink}
-            onPress={() => router.push(`/companies/${companyId}/members` as any)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.membersLinkText}>👥 View members ({company.member_count})</Text>
-            <Text style={styles.membersLinkArrow}>→</Text>
-          </TouchableOpacity>
-        )}
-        
-        {/* ── Customers shortcut ── */}
-        {!isEditing && (
-          <TouchableOpacity
-            style={styles.membersLink}
-            onPress={() => router.push(`/companies/${companyId}/customers` as any)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.membersLinkText}>🧑‍💼 View customers</Text>
-            <Text style={styles.membersLinkArrow}>›</Text>
-          </TouchableOpacity>
+          <View style={styles.linksGroup}>
+            <TouchableOpacity
+              style={styles.linkRow}
+              onPress={() => router.push(`/companies/${companyId}/members` as any)}
+              activeOpacity={0.6}
+            >
+              <View style={styles.linkLeft}>
+                <View style={[styles.linkIconBox, { backgroundColor: '#eff6ff' }]}>
+                  <Text style={[styles.linkIconText, { color: '#2563eb' }]}>M</Text>
+                </View>
+                <Text style={styles.linkText}>Members</Text>
+              </View>
+              <View style={styles.linkRight}>
+                <Text style={styles.linkCount}>{company.member_count}</Text>
+                <Text style={styles.linkChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.linkDivider} />
+
+            <TouchableOpacity
+              style={styles.linkRow}
+              onPress={() => router.push(`/companies/${companyId}/customers` as any)}
+              activeOpacity={0.6}
+            >
+              <View style={styles.linkLeft}>
+                <View style={[styles.linkIconBox, { backgroundColor: '#f0fdf4' }]}>
+                  <Text style={[styles.linkIconText, { color: GREEN }]}>C</Text>
+                </View>
+                <Text style={styles.linkText}>Customers</Text>
+              </View>
+              <View style={styles.linkRight}>
+                <Text style={styles.linkChevron}>›</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* ── Action buttons ── */}
@@ -260,11 +287,15 @@ export default function CompanyDetailScreen() {
             style={[styles.deactivateButton, isDeleting && styles.disabledButton]}
             onPress={handleDeactivate}
             disabled={isDeleting}
+            activeOpacity={0.7}
           >
             {isDeleting ? (
               <ActivityIndicator color={ERROR} />
             ) : (
-              <Text style={styles.deactivateButtonText}>Deactivate company</Text>
+              <>
+                <Text style={styles.deactivateButtonTitle}>Deactivate company</Text>
+                <Text style={styles.deactivateButtonSubtitle}>This can be reversed later by an admin</Text>
+              </>
             )}
           </TouchableOpacity>
         )}
@@ -274,35 +305,57 @@ export default function CompanyDetailScreen() {
 }
 
 // ───────────────────────────────────────────
-// View mode — read-only rows
+// View mode — grouped, professional rows
 // ───────────────────────────────────────────
 function ViewFields({ company }: { company: any }) {
-  const rows = [
-    { label: 'Legal name', value: company.legal_name || '—' },
-    { label: 'Address', value: company.formatted_address || '—' },
-    { label: 'Phone', value: company.phone || '—' },
-    { label: 'Email', value: company.email || '—' },
-    { label: 'Website', value: company.website || '—' },
-    { label: 'Legal registration ID', value: company.legal_registration_id || '—' },
-    { label: 'Legal registration type', value: company.legal_registration_type || '—' },
-    { label: 'VAT group', value: company.is_vat_group ? 'Yes' : 'No' },
-    { label: 'PEPPOL endpoint', value: company.peppol_endpoint || '—' },
+  const groups = [
+    {
+      title: 'Legal information',
+      rows: [
+        { label: 'Legal name', value: company.legal_name },
+        { label: 'Legal registration ID', value: company.legal_registration_id },
+        { label: 'Legal registration type', value: company.legal_registration_type },
+        { label: 'VAT group', value: company.is_vat_group ? 'Yes' : 'No' },
+      ],
+    },
+    {
+      title: 'Address',
+      rows: [{ label: 'Full address', value: company.formatted_address }],
+    },
+    {
+      title: 'Contact',
+      rows: [
+        { label: 'Phone', value: company.phone },
+        { label: 'Email', value: company.email },
+        { label: 'Website', value: company.website },
+      ],
+    },
   ];
 
   return (
-    <View style={styles.card}>
-      {rows.map((row) => (
-        <View key={row.label} style={styles.viewRow}>
-          <Text style={styles.viewLabel}>{row.label}</Text>
-          <Text style={styles.viewValue}>{row.value}</Text>
+    <>
+      {groups.map((group) => (
+        <View key={group.title} style={styles.card}>
+          <Text style={styles.groupTitle}>{group.title}</Text>
+          {group.rows.map((row, i) => (
+            <View
+              key={row.label}
+              style={[styles.viewRow, i === group.rows.length - 1 && styles.viewRowLast]}
+            >
+              <Text style={styles.viewLabel}>{row.label}</Text>
+              <Text style={row.value ? styles.viewValue : styles.viewValueEmpty}>
+                {row.value || 'Not provided'}
+              </Text>
+            </View>
+          ))}
         </View>
       ))}
-    </View>
+    </>
   );
 }
 
 // ───────────────────────────────────────────
-// Edit mode — editable inputs
+// Edit mode
 // ───────────────────────────────────────────
 function EditFields({
   form,
@@ -379,44 +432,60 @@ function Field({ label, required, error, ...inputProps }: any) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { padding: 16, paddingBottom: 48 },
   centerScreen: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG, padding: 24 },
 
-  headerActionText: { color: '#fff', fontSize: 16, fontWeight: '700', marginRight: 12 },
+  headerActionText: { color: '#fff', fontSize: 16, fontWeight: '600', marginRight: 12 },
 
+  // Header card
   headerCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: BORDER,
   },
   avatarCircle: {
-    width: 52, height: 52, borderRadius: 14, backgroundColor: NAVY,
+    width: 50, height: 50, borderRadius: 13, backgroundColor: NAVY,
     alignItems: 'center', justifyContent: 'center', marginRight: 14,
   },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  avatarText: { color: '#fff', fontSize: 19, fontWeight: '700' },
   companyName: { fontSize: 17, fontWeight: '700', color: NAVY },
-  companyTrn: { fontSize: 12, color: SLATE, marginTop: 2 },
-  inactiveBadge: { backgroundColor: '#fef2f2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  inactiveBadgeText: { fontSize: 10, fontWeight: '700', color: ERROR },
+  trnRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4, gap: 5 },
+  trnLabel: { fontSize: 11, color: MUTED, fontWeight: '600', letterSpacing: 0.3 },
+  trnValue: { fontSize: 12.5, color: SLATE, fontWeight: '600', letterSpacing: 0.3 },
 
+  inactiveBadge: { backgroundColor: '#fef2f2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  inactiveBadgeText: { fontSize: 10, fontWeight: '700', color: ERROR, letterSpacing: 0.3 },
+  activeBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0fdf4', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, gap: 5 },
+  activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: GREEN },
+  activeBadgeText: { fontSize: 11, fontWeight: '700', color: GREEN },
+
+  // Grouped view card
   card: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: BORDER,
   },
-
-  // View mode rows
-  viewRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
-  viewLabel: { fontSize: 12, color: SLATE, marginBottom: 3, fontWeight: '500' },
-  viewValue: { fontSize: 15, color: '#1e293b', fontWeight: '500' },
+  groupTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: MUTED,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 10,
+  },
+  viewRow: { paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  viewRowLast: { borderBottomWidth: 0, paddingBottom: 0 },
+  viewLabel: { fontSize: 12.5, color: SLATE, marginBottom: 3, fontWeight: '500' },
+  viewValue: { fontSize: 15, color: '#1e293b', fontWeight: '600' },
+  viewValueEmpty: { fontSize: 14, color: MUTED, fontStyle: 'italic' },
 
   // Edit mode fields
   fieldWrap: { marginBottom: 16 },
@@ -437,14 +506,32 @@ const styles = StyleSheet.create({
 
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
-  // Members link
-  membersLink: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 16,
-    borderWidth: 1, borderColor: BORDER,
+  // Related links group (Members / Customers)
+  linksGroup: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    overflow: 'hidden',
   },
-  membersLinkText: { fontSize: 14, fontWeight: '600', color: NAVY },
-  membersLinkArrow: { fontSize: 16, color: SLATE },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  linkDivider: { height: 1, backgroundColor: '#f1f5f9', marginLeft: 16 },
+  linkLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  linkIconBox: {
+    width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center',
+  },
+  linkIconText: { fontSize: 13, fontWeight: '700' },
+  linkText: { fontSize: 15, fontWeight: '600', color: '#1e293b' },
+  linkRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  linkCount: { fontSize: 13, color: MUTED, fontWeight: '600' },
+  linkChevron: { fontSize: 18, color: MUTED },
 
   // Action buttons
   editActions: { flexDirection: 'row', gap: 12 },
@@ -454,11 +541,19 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   disabledButton: { opacity: 0.6 },
 
-  deactivateButton: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3' },
-  deactivateButtonText: { color: ERROR, fontSize: 15, fontWeight: '700' },
+  deactivateButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    backgroundColor: '#fff1f2',
+    borderWidth: 1,
+    borderColor: '#fecdd3',
+  },
+  deactivateButtonTitle: { color: ERROR, fontSize: 15, fontWeight: '700' },
+  deactivateButtonSubtitle: { color: '#f87171', fontSize: 12, fontWeight: '500', marginTop: 3 },
 
-  errorIcon: { fontSize: 48, marginBottom: 16 },
-  errorTitle: { fontSize: 18, fontWeight: '700', color: NAVY, marginBottom: 16 },
+  errorTitle: { fontSize: 16, fontWeight: '700', color: NAVY, marginBottom: 16 },
   retryButton: { backgroundColor: NAVY, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },
   retryButtonText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 });

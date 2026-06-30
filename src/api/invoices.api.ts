@@ -24,6 +24,9 @@ import type {
   CreateProductPayload,
   UpdateProductPayload,
   ProductFilterParams,
+  FraudAlert,
+  ResolveFraudPayload,
+  WorkflowResult,
 } from '../types/invoice.types';
 
 // ───────────────────────────────────────────
@@ -223,7 +226,13 @@ export const fetchInvoicePayments = async (
   invoiceId: string
 ): Promise<InvoicePayment[]> => {
   const { data } = await apiClient.get(INVOICE_ENDPOINTS.payments(invoiceId));
-  return data.data ?? data;
+  // Response may be an array, { results: [...] }, { data: [...] } or
+  // { data: { results: [...] } } — normalize to a plain array.
+  const body = data?.data ?? data;
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.results)) return body.results;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
 };
 
 export const recordInvoicePayment = async (
@@ -269,7 +278,11 @@ export const deleteDraftAutosave = async (
 
 export const fetchProducts = async (params: ProductFilterParams): Promise<Product[]> => {
   const { data } = await apiClient.get(INVOICE_ENDPOINTS.products, { params });
-  return data.data ?? data;
+  const body = data?.data ?? data;
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body?.results)) return body.results;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
 };
 
 export const createProduct = async (payload: CreateProductPayload): Promise<Product> => {
@@ -287,4 +300,39 @@ export const updateProduct = async (
 
 export const deleteProduct = async (productId: string): Promise<void> => {
   await apiClient.delete(INVOICE_ENDPOINTS.productDetail(productId));
+};
+
+// ═══════════════════════════════════════════
+// Workflow automation + per-invoice fraud
+// ═══════════════════════════════════════════
+
+export const evaluateWorkflow = async (invoiceId: string): Promise<WorkflowResult> => {
+  const { data } = await apiClient.post(INVOICE_ENDPOINTS.workflowEvaluate(invoiceId));
+  return data.data ?? data;
+};
+
+export const analyzeFraud = async (
+  invoiceId: string
+): Promise<{ task_id?: string; message?: string }> => {
+  const { data } = await apiClient.post(INVOICE_ENDPOINTS.fraudAnalyze(invoiceId));
+  return data.data ?? data;
+};
+
+// Returns null when no alert exists yet (backend responds 404).
+export const fetchFraudAlert = async (invoiceId: string): Promise<FraudAlert | null> => {
+  try {
+    const { data } = await apiClient.get(INVOICE_ENDPOINTS.fraud(invoiceId));
+    return data.data ?? data;
+  } catch (err: any) {
+    if (err?.response?.status === 404) return null;
+    throw err;
+  }
+};
+
+export const resolveFraud = async (
+  invoiceId: string,
+  payload: ResolveFraudPayload
+): Promise<FraudAlert> => {
+  const { data } = await apiClient.put(INVOICE_ENDPOINTS.fraudResolve(invoiceId), payload);
+  return data.data ?? data;
 };

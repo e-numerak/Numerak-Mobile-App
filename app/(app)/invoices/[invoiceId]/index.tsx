@@ -13,16 +13,20 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
+import { INVOICE_ENDPOINTS } from '../../../../src/constants/api';
+import { downloadAndShare } from '../../../../src/utils/downloads';
 import {
   useInvoice,
   useSubmitInvoice,
   useCancelInvoice,
   useDeactivateInvoice,
   useCreateCreditNote,
+  useValidateInvoice,
 } from '../../../../src/hooks/useInvoices';
 import { useCompanies } from '../../../../src/hooks/useCompanies';
 import { InvoiceStatusBadge } from '../../../../src/components/InvoiceStatusBadge';
-import type { InvoiceItem } from '../../../../src/types/invoice.types';
+import type { InvoiceItem, InvoiceValidationResult } from '../../../../src/types/invoice.types';
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
@@ -55,13 +59,30 @@ export default function InvoiceDetailScreen() {
   const cancel = useCancelInvoice(invoiceId);
   const deactivate = useDeactivateInvoice(invoiceId);
   const creditNote = useCreateCreditNote(invoiceId);
+  const validate = useValidateInvoice(invoiceId);
 
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [deactivateReason, setDeactivateReason] = useState('');
+  const [validationResult, setValidationResult] = useState<InvoiceValidationResult | null>(null);
+  const [validateOpen, setValidateOpen] = useState(false);
   const insets = useSafeAreaInsets();
 
   const busy =
-    submit.isPending || cancel.isPending || deactivate.isPending || creditNote.isPending;
+    submit.isPending ||
+    cancel.isPending ||
+    deactivate.isPending ||
+    creditNote.isPending ||
+    validate.isPending;
+
+  async function handleValidate() {
+    try {
+      const res = await validate.mutateAsync();
+      setValidationResult(res);
+      setValidateOpen(true);
+    } catch (err: any) {
+      Alert.alert('Validation failed', errMsg(err, 'Could not validate the invoice.'));
+    }
+  }
 
   function handleSubmit() {
     Alert.alert('Submit invoice', 'Submit this invoice for processing?', [
@@ -221,6 +242,58 @@ export default function InvoiceDetailScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Downloads */}
+        <View style={styles.downloadRow}>
+          <TouchableOpacity
+            style={styles.downloadBtn}
+            onPress={() =>
+              downloadAndShare(
+                INVOICE_ENDPOINTS.downloadPdf(invoice.id),
+                `${invoice.invoice_number}.pdf`,
+                'application/pdf'
+              )
+            }
+          >
+            <Feather name="file-text" size={16} color={NAVY} />
+            <Text style={styles.downloadText}>Download PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.downloadBtn}
+            onPress={() =>
+              downloadAndShare(
+                INVOICE_ENDPOINTS.downloadXml(invoice.id),
+                `${invoice.invoice_number}.xml`,
+                'application/xml'
+              )
+            }
+          >
+            <Feather name="download" size={16} color={NAVY} />
+            <Text style={styles.downloadText}>Download XML</Text>
+          </TouchableOpacity>
+        </View>
+
+        {['submitted', 'validated', 'paid', 'partially_paid', 'pending'].includes(invoice.status) && (
+          <TouchableOpacity
+            style={styles.paymentsBtn}
+            onPress={() => router.push(`/invoices/${invoice.id}/payments` as any)}
+          >
+            <Feather name="credit-card" size={16} color={NAVY} />
+            <Text style={styles.paymentsBtnText}>
+              Payments{balanceDue > 0 ? `  ·  Balance ${invoice.currency} ${money(invoice.balance_due)}` : ''}
+            </Text>
+            <Feather name="chevron-right" size={16} color={SLATE} style={{ marginLeft: 'auto' }} />
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={styles.paymentsBtn}
+          onPress={() => router.push(`/invoices/${invoice.id}/fraud` as any)}
+        >
+          <Feather name="shield" size={16} color={NAVY} />
+          <Text style={styles.paymentsBtnText}>AI Risk & Workflow</Text>
+          <Feather name="chevron-right" size={16} color={SLATE} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+
         {/* Deactivated banner */}
         {invoice.status === 'deactivated' && (
           <View style={styles.banner}>
@@ -237,13 +310,28 @@ export default function InvoiceDetailScreen() {
             invoice.invoice_type !== 'credit_note' &&
             ['submitted', 'validated', 'paid', 'partially_paid'].includes(invoice.status);
           const showDeactivate = invoice.is_deactivatable && !invoice.is_cancellable;
+          const showValidate = ['draft', 'pending'].includes(invoice.status);
           const anyAction =
-            invoice.is_submittable || invoice.is_cancellable || showCreditNote || showDeactivate;
+            invoice.is_submittable ||
+            invoice.is_cancellable ||
+            showCreditNote ||
+            showDeactivate ||
+            showValidate;
           if (!anyAction) return null;
 
           return (
             <View style={styles.actionsWrap}>
               {busy && <ActivityIndicator color={NAVY} style={{ marginBottom: 8 }} />}
+
+              {showValidate && (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionSecondary]}
+                  onPress={handleValidate}
+                  disabled={busy}
+                >
+                  <Text style={styles.actionSecondaryText}>Validate (pre-submit check)</Text>
+                </TouchableOpacity>
+              )}
 
               {invoice.is_submittable && (
                 <TouchableOpacity
@@ -385,6 +473,13 @@ export default function InvoiceDetailScreen() {
               grand
             />
           </View>
+
+          <TouchableOpacity
+            style={styles.vatLinkBtn}
+            onPress={() => router.push(`/invoices/${invoice.id}/vat-summary` as any)}
+          >
+            <Text style={styles.vatLinkText}>View VAT Summary ›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ASP submission */}
@@ -460,6 +555,89 @@ export default function InvoiceDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Validation result modal */}
+      <Modal
+        visible={validateOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setValidateOpen(false)}
+      >
+        <Pressable style={styles.overlay} onPress={() => setValidateOpen(false)}>
+          <Pressable
+            style={[styles.sheet, { paddingBottom: insets.bottom + 16, maxHeight: '85%' }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <View style={styles.handle} />
+            {validationResult && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View
+                  style={[
+                    styles.valBanner,
+                    validationResult.is_valid ? styles.valBannerOk : styles.valBannerBad,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.valBannerText,
+                      validationResult.is_valid ? styles.valOkText : styles.valBadText,
+                    ]}
+                  >
+                    {validationResult.is_valid ? '✓ Invoice is valid' : '✕ Validation found issues'}
+                  </Text>
+                  <Text style={styles.valCanSubmit}>
+                    {validationResult.can_submit ? 'Ready to submit' : 'Cannot submit yet'}
+                  </Text>
+                </View>
+
+                <ValSection title="Errors" items={validationResult.errors} tone="error" />
+                <ValSection title="Warnings" items={validationResult.warnings} tone="warn" />
+                <ValSection title="PEPPOL Errors" items={validationResult.peppol_errors} tone="error" />
+                <ValSection title="PEPPOL Warnings" items={validationResult.peppol_warnings} tone="warn" />
+
+                {validationResult.is_valid &&
+                  validationResult.errors.length === 0 &&
+                  validationResult.warnings.length === 0 &&
+                  validationResult.peppol_errors.length === 0 &&
+                  validationResult.peppol_warnings.length === 0 && (
+                    <Text style={styles.valClean}>No issues found. This invoice passed all checks.</Text>
+                  )}
+
+                <TouchableOpacity
+                  style={styles.valCloseBtn}
+                  onPress={() => setValidateOpen(false)}
+                >
+                  <Text style={styles.valCloseText}>Close</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+function ValSection({
+  title,
+  items,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  tone: 'error' | 'warn';
+}) {
+  if (!items || items.length === 0) return null;
+  return (
+    <View style={styles.valSection}>
+      <Text style={styles.valSectionTitle}>
+        {title} ({items.length})
+      </Text>
+      {items.map((msg, i) => (
+        <View key={i} style={[styles.valItem, tone === 'error' ? styles.valItemError : styles.valItemWarn]}>
+          <Text style={tone === 'error' ? styles.valItemErrorText : styles.valItemWarnText}>{msg}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -564,6 +742,21 @@ const styles = StyleSheet.create({
   },
   editBtnText: { color: NAVY, fontWeight: '700', fontSize: 13 },
 
+  downloadRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  downloadBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    paddingVertical: 12, borderRadius: 12, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: BORDER,
+  },
+  downloadText: { color: NAVY, fontWeight: '700', fontSize: 13 },
+
+  paymentsBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 9, marginTop: 10,
+    paddingVertical: 13, paddingHorizontal: 14, borderRadius: 12,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER,
+  },
+  paymentsBtnText: { color: NAVY, fontWeight: '700', fontSize: 14 },
+
   actionsWrap: { marginTop: 14, gap: 10 },
   actionBtn: { paddingVertical: 13, borderRadius: 12, alignItems: 'center' },
   actionPrimary: { backgroundColor: NAVY },
@@ -600,6 +793,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#dc2626',
   },
   sheetConfirmText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  vatLinkBtn: { marginTop: 14, alignItems: 'center', paddingVertical: 8 },
+  vatLinkText: { color: NAVY, fontWeight: '700', fontSize: 13 },
+
+  valBanner: { borderRadius: 12, padding: 14, marginBottom: 14 },
+  valBannerOk: { backgroundColor: '#f0fdf4', borderWidth: 1, borderColor: '#bbf7d0' },
+  valBannerBad: { backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3' },
+  valBannerText: { fontSize: 16, fontWeight: '800' },
+  valOkText: { color: '#166534' },
+  valBadText: { color: '#be123c' },
+  valCanSubmit: { fontSize: 13, color: SLATE, marginTop: 4 },
+
+  valSection: { marginBottom: 14 },
+  valSectionTitle: { fontSize: 13, fontWeight: '800', color: NAVY, marginBottom: 8 },
+  valItem: { borderRadius: 8, padding: 10, marginBottom: 6 },
+  valItemError: { backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3' },
+  valItemWarn: { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fde68a' },
+  valItemErrorText: { color: '#be123c', fontSize: 13, lineHeight: 18 },
+  valItemWarnText: { color: '#92400e', fontSize: 13, lineHeight: 18 },
+  valClean: { fontSize: 14, color: '#166534', textAlign: 'center', paddingVertical: 16 },
+
+  valCloseBtn: {
+    backgroundColor: NAVY, borderRadius: 12, paddingVertical: 14,
+    alignItems: 'center', marginTop: 6,
+  },
+  valCloseText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 
   banner: {
     marginTop: 14,

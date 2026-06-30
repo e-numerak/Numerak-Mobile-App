@@ -9,9 +9,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useCompanies } from '../../../src/hooks/useCompanies';
 import { useInvoices } from '../../../src/hooks/useInvoices';
 import { InvoiceStatusBadge } from '../../../src/components/InvoiceStatusBadge';
+import { INVOICE_ENDPOINTS } from '../../../src/constants/api';
+import { downloadAndShare } from '../../../src/utils/downloads';
 import type { Company } from '../../../src/types/company.types';
 import type { InvoiceListItem, InvoiceStatus } from '../../../src/types/invoice.types';
 
@@ -115,6 +118,14 @@ export default function InvoicesScreen() {
           )}
         </View>
         <TouchableOpacity
+          style={styles.catalogBtn}
+          onPress={() =>
+            router.push({ pathname: '/invoices/products', params: { companyId } } as any)
+          }
+        >
+          <Feather name="package" size={18} color={NAVY} />
+        </TouchableOpacity>
+        <TouchableOpacity
           style={styles.createBtn}
           onPress={() =>
             router.push({ pathname: '/invoices/create', params: { companyId } } as any)
@@ -179,6 +190,31 @@ export default function InvoicesScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Toolbar — export + compliance */}
+      <View style={styles.toolbar}>
+        <TouchableOpacity
+          style={styles.toolBtn}
+          onPress={() => {
+            const url =
+              `${INVOICE_ENDPOINTS.export}?company_id=${companyId}` +
+              (status ? `&status=${status}` : '');
+            downloadAndShare(url, `invoices_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv');
+          }}
+        >
+          <Feather name="download" size={15} color={NAVY} />
+          <Text style={styles.toolBtnText}>Export CSV</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.toolBtn}
+          onPress={() =>
+            router.push({ pathname: '/invoices/gap-report', params: { companyId } } as any)
+          }
+        >
+          <Feather name="shield" size={15} color={NAVY} />
+          <Text style={styles.toolBtnText}>Gap Report</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* List */}
       {isLoading ? (
@@ -272,9 +308,43 @@ function InvoiceRow({
         <View style={styles.badgeCol}>
           <InvoiceStatusBadge status={invoice.status} label={invoice.status_display} />
           {invoice.buyer_viewed_at && (
-            <Text style={styles.viewedPill}>👁 Buyer Viewed</Text>
+            <View style={styles.viewedPill}>
+              <Feather name="eye" size={11} color="#0d9488" />
+              <Text style={styles.viewedPillText}>Buyer Viewed</Text>
+            </View>
           )}
         </View>
+      </View>
+
+      <View style={styles.rowActions}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() =>
+            downloadAndShare(
+              INVOICE_ENDPOINTS.downloadPdf(invoice.id),
+              `${invoice.invoice_number}.pdf`,
+              'application/pdf'
+            )
+          }
+        >
+          <Feather name="file-text" size={14} color={SLATE} />
+          <Text style={styles.iconBtnText}>PDF</Text>
+        </TouchableOpacity>
+        {invoice.has_xml && (
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() =>
+              downloadAndShare(
+                INVOICE_ENDPOINTS.downloadXml(invoice.id),
+                `${invoice.invoice_number}.xml`,
+                'application/xml'
+              )
+            }
+          >
+            <Feather name="download" size={14} color={SLATE} />
+            <Text style={styles.iconBtnText}>XML</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -294,6 +364,11 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '800', color: NAVY },
   subtitle: { fontSize: 12, color: SLATE, marginTop: 2 },
+  catalogBtn: {
+    width: 40, height: 38, borderRadius: 10, marginRight: 8,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER,
+  },
   createBtn: {
     backgroundColor: NAVY, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10,
   },
@@ -301,6 +376,14 @@ const styles = StyleSheet.create({
 
   chipsScroll: { flexGrow: 0 },
   chipsRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
+
+  toolbar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
+  toolBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    paddingVertical: 10, borderRadius: 10, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: BORDER,
+  },
+  toolBtnText: { color: NAVY, fontWeight: '700', fontSize: 13 },
   singleCompany: { paddingHorizontal: 16, paddingVertical: 6, fontSize: 13, color: SLATE, fontWeight: '600' },
 
   companyChip: {
@@ -337,7 +420,19 @@ const styles = StyleSheet.create({
   meta: { fontSize: 12, color: SLATE },
   metaDot: { fontSize: 12, color: SLATE, marginHorizontal: 6 },
   badgeCol: { alignItems: 'flex-end', gap: 4 },
-  viewedPill: { fontSize: 11, color: '#0d9488', fontWeight: '600' },
+  viewedPill: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewedPillText: { fontSize: 11, color: '#0d9488', fontWeight: '600' },
+
+  rowActions: {
+    flexDirection: 'row', gap: 8, marginTop: 12, paddingTop: 10,
+    borderTopWidth: 1, borderTopColor: '#f1f5f9', justifyContent: 'flex-end',
+  },
+  iconBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+    borderWidth: 1, borderColor: BORDER, backgroundColor: '#fff',
+  },
+  iconBtnText: { fontSize: 12, color: SLATE, fontWeight: '700' },
 
   pagination: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

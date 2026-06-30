@@ -21,7 +21,19 @@ export const fetchCompanies = async (): Promise<Company[]> => {
 export const createCompany = async (
   payload: CreateCompanyPayload
 ): Promise<Company> => {
-  const { data } = await apiClient.post(COMPANY_ENDPOINTS.list, payload);
+  const formData = new FormData();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    if (key === 'logo') {
+      formData.append(key, value as any);
+    } else {
+      formData.append(key, String(value));
+    }
+  });
+
+  const { data } = await apiClient.post(COMPANY_ENDPOINTS.list, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return data.data ?? data;
 };
 
