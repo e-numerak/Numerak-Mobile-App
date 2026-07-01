@@ -1,38 +1,17 @@
-import { useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions, ScrollView } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions, ScrollView, Animated, Easing } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { Drawer } from 'expo-router/drawer';
 import { DrawerToggleButton } from '@react-navigation/drawer';
-import { useRouter, usePathname, useNavigation } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
+import { useIsFetching } from '@tanstack/react-query';
 import { useAuthStore } from '../../src/store/authStore';
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
-
-// Header-left that adapts per screen: a back arrow when there's history to pop,
-// otherwise the drawer hamburger (so root/sidebar screens still open the menu).
-function SmartHeaderLeft() {
-  const navigation = useNavigation();
-  if (navigation.canGoBack()) {
-    return (
-      <TouchableOpacity
-        onPress={() => navigation.goBack()}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        style={{ paddingLeft: 12, paddingRight: 6 }}
-      >
-        <Feather name="chevron-left" size={26} color="#fff" />
-      </TouchableOpacity>
-    );
-  }
-  return <DrawerToggleButton tintColor="#fff" />;
-}
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-// Responsive drawer width: 80% of screen on small phones, capped at 320px on tablets
-const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 330);
 
 type MenuItem = { label: string; route: string; icon: keyof typeof Feather.glyphMap };
 
@@ -45,6 +24,94 @@ const MENU_ITEMS: MenuItem[] = [
   { label: 'Reports', route: '/reports', icon: 'bar-chart-2' },
   { label: 'Settings', route: '/settings/profile', icon: 'settings' },
 ];
+
+// Top-level sidebar routes always show the hamburger (to open the menu).
+// Any deeper screen shows a back arrow so navigation feels step-by-step.
+const TOP_LEVEL_ROUTES = MENU_ITEMS.map((m) => m.route);
+
+// One path segment up — e.g. /companies/123/customers/456 -> /companies/123/customers.
+// This gives deterministic, breadcrumb-style back navigation regardless of how
+// the drawer navigator tracks its own history.
+function parentPath(pathname: string): string | null {
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts.length <= 1) return null;
+  parts.pop();
+  return '/' + parts.join('/');
+}
+
+// Header-left that adapts per screen: hamburger on the sidebar's own screens,
+// otherwise a back arrow (deep/detail screens) that steps up ONE level at a time.
+function SmartHeaderLeft() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const isTopLevel = TOP_LEVEL_ROUTES.includes(pathname);
+
+  if (isTopLevel) {
+    return <DrawerToggleButton tintColor="#fff" />;
+  }
+
+  const stepBack = () => {
+    const parent = parentPath(pathname);
+    router.navigate((parent ?? '/dashboard') as any);
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={stepBack}
+      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+      style={{ paddingLeft: 12, paddingRight: 6 }}
+    >
+      <Feather name="chevron-left" size={26} color="#fff" />
+    </TouchableOpacity>
+  );
+}
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+// Responsive drawer width: 80% of screen on small phones, capped at 320px on tablets
+const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 330);
+
+const BAR_WIDTH = SCREEN_WIDTH * 0.35;
+
+// A slim indeterminate progress bar that appears at the very top whenever ANY
+// React Query request is in flight — so every navigation/data load shows a
+// smooth, professional loading indicator instead of a blank screen.
+function GlobalLoadingBar() {
+  const fetching = useIsFetching();
+  const insets = useSafeAreaInsets();
+  const slide = useRef(new Animated.Value(-BAR_WIDTH)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (fetching > 0) {
+      opacity.setValue(1);
+      slide.setValue(-BAR_WIDTH);
+      const loop = Animated.loop(
+        Animated.timing(slide, {
+          toValue: SCREEN_WIDTH,
+          duration: 850,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        })
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+    Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }).start();
+  }, [fetching, slide, opacity]);
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.barTrack, { top: insets.top, opacity }]}>
+      <Animated.View style={[styles.barFill, { transform: [{ translateX: slide }] }]}>
+        <LinearGradient
+          colors={['#60a5fa00', '#60a5fa', '#93c5fd', '#60a5fa00']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </Animated.View>
+  );
+}
 
 function DrawerContent() {
   const { user, logout } = useAuthStore();
@@ -115,7 +182,7 @@ function DrawerContent() {
             <TouchableOpacity
               key={item.route}
               style={[styles.menuItem, active && styles.menuItemActive]}
-              onPress={() => router.replace(item.route as any)}
+              onPress={() => router.navigate(item.route as any)}
               activeOpacity={0.7}
             >
               {active && <View style={styles.activeAccent} />}
@@ -189,6 +256,7 @@ export default function AppLayout() {
         <Drawer.Screen name="reports/index" options={{ title: 'Reports' }} />
         <Drawer.Screen name="settings/profile" options={{ title: 'Settings' }} />
       </Drawer>
+      <GlobalLoadingBar />
     </GestureHandlerRootView>
   );
 }
@@ -196,6 +264,12 @@ export default function AppLayout() {
 const styles = StyleSheet.create({
   loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
   drawerContainer: { flex: 1, backgroundColor: '#fff' },
+
+  barTrack: {
+    position: 'absolute', left: 0, right: 0, height: 3, zIndex: 9999,
+    overflow: 'hidden', backgroundColor: 'transparent',
+  },
+  barFill: { position: 'absolute', top: 0, bottom: 0, width: BAR_WIDTH },
 
   userSection: { paddingHorizontal: 20, paddingBottom: 20 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 18 },

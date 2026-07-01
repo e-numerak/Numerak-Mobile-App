@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useProfile, useUpdateProfile, useChangePassword } from '../../../src/hooks/useProfile';
 import { useCompanies } from '../../../src/hooks/useCompanies';
 
@@ -151,18 +152,33 @@ export default function ProfileScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ title: 'Profile' }} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* ── Identity hero ── */}
+        <LinearGradient
+          colors={['#1e3a5f', '#16314f', '#0c1d30']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
+        >
+          <View style={styles.heroAvatar}>
+            <Text style={styles.heroAvatarText}>
+              {`${profile.first_name?.[0] ?? ''}${profile.last_name?.[0] ?? ''}`.toUpperCase() || 'U'}
+            </Text>
+          </View>
+          <Text style={styles.heroName}>{fullName}</Text>
+          <Text style={styles.heroEmail}>{profile.email}</Text>
+          <View style={styles.heroRoleBadge}>
+            <Feather name="award" size={11} color="#bfdbfe" />
+            <Text style={styles.heroRoleText}>{roleLabel.toUpperCase()}</Text>
+          </View>
+        </LinearGradient>
+
         {/* ── Personal details ── */}
         <View style={styles.card}>
-          <View style={styles.identityRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {`${profile.first_name?.[0] ?? ''}${profile.last_name?.[0] ?? ''}`.toUpperCase() || 'U'}
-              </Text>
+          <View style={styles.sectionHead}>
+            <View style={styles.sectionIcon}>
+              <Feather name="user" size={15} color={NAVY} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{fullName}</Text>
-              <Text style={styles.email}>{profile.email}</Text>
-            </View>
+            <Text style={styles.sectionTitle}>Personal Details</Text>
           </View>
 
           <View style={styles.row2}>
@@ -200,7 +216,10 @@ export default function ProfileScreen() {
             {updateProfile.isPending ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryFullText}>💾  Save changes</Text>
+              <>
+                <Feather name="save" size={16} color="#fff" />
+                <Text style={styles.primaryFullText}>Save changes</Text>
+              </>
             )}
           </TouchableOpacity>
         </View>
@@ -208,6 +227,13 @@ export default function ProfileScreen() {
         {/* ── Company (read-only) ── */}
         {company && (
           <View style={styles.card}>
+            <View style={styles.sectionHead}>
+              <View style={styles.sectionIcon}>
+                <Feather name="briefcase" size={15} color={NAVY} />
+              </View>
+              <Text style={styles.sectionTitle}>Company</Text>
+            </View>
+
             <View style={styles.companyHeader}>
               <View style={styles.companyLogo}>
                 <Text style={styles.companyLogoText}>
@@ -237,7 +263,12 @@ export default function ProfileScreen() {
 
         {/* ── Change password ── */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>🔒  Change password</Text>
+          <View style={styles.sectionHead}>
+            <View style={styles.sectionIcon}>
+              <Feather name="lock" size={15} color={NAVY} />
+            </View>
+            <Text style={styles.sectionTitle}>Change password</Text>
+          </View>
 
           <PwField
             label="Current password"
@@ -278,7 +309,10 @@ export default function ProfileScreen() {
             {changePassword.isPending ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryFullText}>🔒  Update password</Text>
+              <>
+                <Feather name="lock" size={16} color="#fff" />
+                <Text style={styles.primaryFullText}>Update password</Text>
+              </>
             )}
           </TouchableOpacity>
         </View>
@@ -367,10 +401,32 @@ const styles = StyleSheet.create({
   msgErr: { color: ERROR },
 
   primaryFull: {
-    backgroundColor: NAVY, borderRadius: 12, paddingVertical: 14,
-    alignItems: 'center', marginTop: 16,
+    flexDirection: 'row', gap: 8, backgroundColor: NAVY, borderRadius: 12, paddingVertical: 14,
+    alignItems: 'center', justifyContent: 'center', marginTop: 16,
   },
   primaryFullText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+
+  hero: {
+    borderRadius: 20, padding: 22, alignItems: 'center', marginBottom: 14,
+    shadowColor: '#1e3a5f', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, shadowRadius: 14, elevation: 5,
+  },
+  heroAvatar: {
+    width: 66, height: 66, borderRadius: 33, backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center',
+  },
+  heroAvatarText: { color: '#fff', fontSize: 24, fontWeight: '900' },
+  heroName: { color: '#fff', fontSize: 19, fontWeight: '800', marginTop: 12 },
+  heroEmail: { color: '#cbd5e1', fontSize: 13, marginTop: 3 },
+  heroRoleBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 12,
+    backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999,
+  },
+  heroRoleText: { color: '#dbeafe', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 8 },
+  sectionIcon: { width: 30, height: 30, borderRadius: 8, backgroundColor: '#eef2f8', alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: NAVY },
 
   companyHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
   companyLogo: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center', justifyContent: 'center' },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useLayoutEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   RefreshControl,
   TextInput,
 } from 'react-native';
-import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation, Stack } from 'expo-router';
 import { useCustomers } from '../../../../src/hooks/useCustomers';
 import type { Customer } from '../../../../src/types/customer.types';
 
@@ -25,7 +25,14 @@ const ERROR = '#dc2626';
 export default function CompanyCustomersScreen() {
   const { companyId } = useLocalSearchParams<{ companyId: string }>();
   const router = useRouter();
+  const navigation = useNavigation();
   const [search, setSearch] = useState('');
+
+  // Set the header title imperatively — reliable even when the route name
+  // would otherwise leak into the header (customers.tsx + customers/ folder).
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: 'Customers' });
+  }, [navigation]);
 
   const { data, isLoading, isError, refetch, isRefetching } = useCustomers({
     company_id: companyId,

@@ -5,13 +5,16 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/store/authStore';
 import { useCompanies } from '../../src/hooks/useCompanies';
 import { useInvoiceDashboard } from '../../src/hooks/useInvoices';
 import { InvoiceStatusBadge } from '../../src/components/InvoiceStatusBadge';
+import { LoadingScreen } from '../../src/components/Loading';
 import type { InvoiceStatus } from '../../src/types/invoice.types';
 
 const NAVY = '#1e3a5f';
@@ -25,6 +28,34 @@ function money(value: string | number | null | undefined): string {
     maximumFractionDigits: 2,
   });
 }
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+const todayLabel = new Date().toLocaleDateString('en-AE', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+});
+
+type QuickAction = {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  route: string;
+  tint: string;
+  bg: string;
+};
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: 'Invoices', icon: 'file-text', route: '/invoices', tint: '#2563eb', bg: '#eff6ff' },
+  { label: 'Customers', icon: 'users', route: '/customers', tint: '#0d9488', bg: '#f0fdfa' },
+  { label: 'Companies', icon: 'briefcase', route: '/companies', tint: '#7c3aed', bg: '#f5f3ff' },
+  { label: 'Catalog', icon: 'package', route: '/invoices/products', tint: '#d97706', bg: '#fffbeb' },
+];
 
 export default function DashboardScreen() {
   const { user } = useAuthStore();
@@ -46,40 +77,51 @@ export default function DashboardScreen() {
     number
   ][];
 
-  const cards = [
-    { label: 'Total Invoices', value: String(stats?.total_invoices ?? 0), icon: '🧾', tint: '#2563eb', tintBg: '#eff6ff' },
-    { label: 'Total Revenue', value: `AED ${money(stats?.total_revenue)}`, icon: '💰', tint: '#16a34a', tintBg: '#f0fdf4' },
-    { label: 'Total VAT', value: `AED ${money(stats?.total_vat)}`, icon: '🧮', tint: '#d97706', tintBg: '#fffbeb' },
-  ];
+  const totalInvoices = stats?.total_invoices ?? 0;
+  const revenue = Number(stats?.total_revenue ?? 0);
+  const avg = totalInvoices > 0 ? revenue / totalInvoices : 0;
 
-  const shortcuts = [
-    { label: 'Companies', icon: '🏢', route: '/companies' as const },
-    { label: 'Invoices', icon: '🧾', route: '/invoices' as const },
-  ];
+  if (companiesLoading) {
+    return <LoadingScreen label="Loading your dashboard…" />;
+  }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.greeting}>Welcome back, {user?.first_name ?? 'there'}</Text>
-        <Text style={styles.subGreeting}>Here's your business at a glance</Text>
-      </View>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={NAVY} />
+      }
+    >
+      {/* Greeting */}
+      <Text style={styles.greeting}>
+        {greeting()}, {user?.first_name ?? 'there'}
+      </Text>
+      <Text style={styles.date}>{todayLabel}</Text>
 
-      {/* Company selector */}
-      {companiesLoading ? (
-        <ActivityIndicator color={NAVY} style={{ marginVertical: 20 }} />
-      ) : !companies || companies.length === 0 ? (
+      {/* No companies */}
+      {!companies || companies.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyEmoji}>🏢</Text>
-          <Text style={styles.emptyText}>Add a company to see your dashboard.</Text>
+          <View style={styles.emptyIcon}>
+            <Feather name="briefcase" size={26} color={NAVY} />
+          </View>
+          <Text style={styles.emptyTitle}>Set up your first company</Text>
+          <Text style={styles.emptyText}>Add a company to start issuing invoices and see your stats here.</Text>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/companies/create' as any)}>
-            <Text style={styles.emptyBtnText}>+ Add Company</Text>
+            <Feather name="plus" size={16} color="#fff" />
+            <Text style={styles.emptyBtnText}>Add Company</Text>
           </TouchableOpacity>
         </View>
       ) : (
         <>
+          {/* Company selector */}
           {companies.length > 1 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll} contentContainerStyle={styles.chipsRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipsScroll}
+              contentContainerStyle={styles.chipsRow}
+            >
               {companies.map((c) => {
                 const active = c.id === companyId;
                 return (
@@ -95,71 +137,104 @@ export default function DashboardScreen() {
             </ScrollView>
           )}
 
-          {/* Stat cards */}
-          {isLoading ? (
-            <ActivityIndicator color={NAVY} style={{ marginVertical: 30 }} />
-          ) : (
-            <>
-              <View style={styles.statsStack}>
-                {cards.map((stat) => (
-                  <View key={stat.label} style={styles.statCard}>
-                    <View style={[styles.iconBadge, { backgroundColor: stat.tintBg }]}>
-                      <Text style={styles.iconBadgeText}>{stat.icon}</Text>
-                    </View>
-                    <View style={styles.statTextWrap}>
-                      <Text style={styles.statLabel}>{stat.label}</Text>
-                      <Text style={[styles.statValue, { color: stat.tint }]}>{stat.value}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
+          {/* Hero revenue card */}
+          <LinearGradient
+            colors={['#1e3a5f', '#16314f', '#0c1d30']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <View style={styles.heroTopRow}>
+              <Text style={styles.heroLabel}>TOTAL REVENUE</Text>
+              <Feather name="trending-up" size={18} color="#93c5fd" />
+            </View>
+            <Text style={styles.heroValue}>
+              <Text style={styles.heroCurrency}>AED </Text>
+              {isLoading ? '—' : money(revenue)}
+            </Text>
 
-              {/* Status breakdown */}
-              {breakdownEntries.length > 0 && (
-                <>
-                  <Text style={styles.sectionTitle}>Status breakdown</Text>
-                  <View style={styles.breakdownCard}>
-                    {breakdownEntries.map(([status, count]) => (
-                      <View key={status} style={styles.breakdownRow}>
-                        <InvoiceStatusBadge status={status} />
-                        <Text style={styles.breakdownCount}>{count}</Text>
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatValue}>{isLoading ? '—' : totalInvoices}</Text>
+                <Text style={styles.heroStatLabel}>Invoices</Text>
+              </View>
+              <View style={styles.heroDivider} />
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatValue}>{isLoading ? '—' : `AED ${money(stats?.total_vat)}`}</Text>
+                <Text style={styles.heroStatLabel}>Total VAT</Text>
+              </View>
+              <View style={styles.heroDivider} />
+              <View style={styles.heroStat}>
+                <Text style={styles.heroStatValue}>{isLoading ? '—' : `AED ${money(avg)}`}</Text>
+                <Text style={styles.heroStatLabel}>Avg / invoice</Text>
+              </View>
+            </View>
+          </LinearGradient>
+
+          {/* Create invoice */}
+          <TouchableOpacity
+            style={styles.createBtn}
+            onPress={() => router.push({ pathname: '/invoices/create', params: { companyId } } as any)}
+            activeOpacity={0.85}
+          >
+            <Feather name="plus-circle" size={18} color="#fff" />
+            <Text style={styles.createBtnText}>Create New Invoice</Text>
+          </TouchableOpacity>
+
+          {/* Status breakdown */}
+          {breakdownEntries.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Invoice status</Text>
+              <View style={styles.breakdownCard}>
+                {breakdownEntries.map(([status, count], i) => {
+                  const pct = totalInvoices > 0 ? Math.round((count / totalInvoices) * 100) : 0;
+                  return (
+                    <View
+                      key={status}
+                      style={[styles.breakdownRow, i > 0 && styles.breakdownRowDivider]}
+                    >
+                      <InvoiceStatusBadge status={status} />
+                      <View style={styles.breakdownBarWrap}>
+                        <View style={[styles.breakdownBar, { width: `${pct}%` }]} />
                       </View>
-                    ))}
-                  </View>
-                </>
-              )}
+                      <Text style={styles.breakdownCount}>{count}</Text>
+                    </View>
+                  );
+                })}
+              </View>
             </>
           )}
+
+          {/* Quick actions */}
+          <Text style={styles.sectionTitle}>Quick actions</Text>
+          <View style={styles.actionsGrid}>
+            {QUICK_ACTIONS.map((a) => (
+              <TouchableOpacity
+                key={a.route}
+                style={styles.actionCard}
+                onPress={() => router.push(a.route as any)}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: a.bg }]}>
+                  <Feather name={a.icon} size={20} color={a.tint} />
+                </View>
+                <Text style={styles.actionLabel}>{a.label}</Text>
+                <Feather name="chevron-right" size={16} color="#cbd5e1" style={styles.actionArrow} />
+              </TouchableOpacity>
+            ))}
+          </View>
         </>
       )}
-
-      {/* Quick Actions */}
-      <Text style={styles.sectionTitle}>Quick actions</Text>
-      <View style={styles.shortcutsRow}>
-        {shortcuts.map((item) => (
-          <TouchableOpacity
-            key={item.route}
-            style={styles.shortcutCard}
-            onPress={() => router.push(item.route)}
-            activeOpacity={0.75}
-          >
-            <Text style={styles.shortcutIcon}>{item.icon}</Text>
-            <Text style={styles.shortcutLabel}>{item.label}</Text>
-            <Text style={styles.shortcutArrow}>›</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  content: { padding: 20, paddingTop: 28, paddingBottom: 48 },
+  content: { padding: 18, paddingTop: 24, paddingBottom: 48 },
 
-  header: { marginBottom: 20 },
-  greeting: { fontSize: 24, fontWeight: '700', color: NAVY, letterSpacing: -0.3 },
-  subGreeting: { fontSize: 14, color: SLATE, marginTop: 4 },
+  greeting: { fontSize: 24, fontWeight: '800', color: NAVY, letterSpacing: -0.3 },
+  date: { fontSize: 13, color: SLATE, marginTop: 4, marginBottom: 18, fontWeight: '500' },
 
   chipsScroll: { flexGrow: 0, marginBottom: 16 },
   chipsRow: { gap: 8, alignItems: 'center' },
@@ -171,43 +246,70 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: SLATE, fontWeight: '600' },
   chipTextActive: { color: '#fff' },
 
-  statsStack: { gap: 12, marginBottom: 24 },
-  statCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
-    borderRadius: 16, padding: 16, borderWidth: 1, borderColor: BORDER,
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
+  // Hero
+  hero: {
+    borderRadius: 22, padding: 22, marginBottom: 14,
+    shadowColor: '#1e3a5f', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25, shadowRadius: 16, elevation: 6,
   },
-  iconBadge: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  iconBadgeText: { fontSize: 22 },
-  statTextWrap: { flex: 1 },
-  statLabel: { fontSize: 13, color: SLATE, marginBottom: 2, fontWeight: '500' },
-  statValue: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  heroTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  heroLabel: { color: '#93c5fd', fontSize: 11, fontWeight: '800', letterSpacing: 1.2 },
+  heroValue: { color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: -0.8, marginTop: 8 },
+  heroCurrency: { fontSize: 18, fontWeight: '700', color: '#cbd5e1' },
+  heroStatsRow: {
+    flexDirection: 'row', alignItems: 'center', marginTop: 20,
+    borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)', paddingTop: 16,
+  },
+  heroStat: { flex: 1, alignItems: 'center' },
+  heroDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.12)' },
+  heroStatValue: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  heroStatLabel: { color: '#94a3b8', fontSize: 10, marginTop: 3, fontWeight: '600' },
 
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: NAVY, marginBottom: 12, marginTop: 8 },
+  // Create button
+  createBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9,
+    backgroundColor: '#2563eb', borderRadius: 16, paddingVertical: 15, marginBottom: 6,
+    shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 10, elevation: 4,
+  },
+  createBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 
+  sectionTitle: { fontSize: 15, fontWeight: '800', color: NAVY, marginTop: 22, marginBottom: 12 },
+
+  // Status breakdown
   breakdownCard: {
-    backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: BORDER,
-    padding: 8, marginBottom: 24,
+    backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: BORDER, padding: 6,
   },
-  breakdownRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 10, paddingHorizontal: 10,
-  },
-  breakdownCount: { fontSize: 16, fontWeight: '800', color: NAVY },
+  breakdownRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 10 },
+  breakdownRowDivider: { borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  breakdownBarWrap: { flex: 1, height: 6, borderRadius: 999, backgroundColor: '#f1f5f9', overflow: 'hidden' },
+  breakdownBar: { height: 6, borderRadius: 999, backgroundColor: NAVY },
+  breakdownCount: { fontSize: 15, fontWeight: '800', color: NAVY, minWidth: 24, textAlign: 'right' },
 
+  // Quick actions
+  actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  actionCard: {
+    width: '47%', flexGrow: 1, backgroundColor: '#fff', borderRadius: 16,
+    borderWidth: 1, borderColor: BORDER, padding: 16,
+  },
+  actionIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  actionLabel: { fontSize: 15, fontWeight: '700', color: NAVY },
+  actionArrow: { position: 'absolute', top: 16, right: 14 },
+
+  // Empty
   emptyCard: {
-    backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: BORDER,
-    padding: 24, alignItems: 'center', marginBottom: 24,
+    backgroundColor: '#fff', borderRadius: 18, borderWidth: 1, borderColor: BORDER,
+    padding: 26, alignItems: 'center', marginTop: 8,
   },
-  emptyEmoji: { fontSize: 40, marginBottom: 10 },
-  emptyText: { fontSize: 14, color: SLATE, textAlign: 'center', marginBottom: 16 },
-  emptyBtn: { backgroundColor: NAVY, paddingHorizontal: 22, paddingVertical: 11, borderRadius: 10 },
+  emptyIcon: {
+    width: 56, height: 56, borderRadius: 16, backgroundColor: '#eef2f8',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+  },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: NAVY, marginBottom: 6 },
+  emptyText: { fontSize: 14, color: SLATE, textAlign: 'center', marginBottom: 18, lineHeight: 20 },
+  emptyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: NAVY, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12,
+  },
   emptyBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-
-  shortcutsRow: { flexDirection: 'row', gap: 12 },
-  shortcutCard: { flex: 1, backgroundColor: NAVY, borderRadius: 16, padding: 18, minHeight: 110, justifyContent: 'space-between' },
-  shortcutIcon: { fontSize: 26 },
-  shortcutLabel: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  shortcutArrow: { fontSize: 16, color: '#93c5fd', fontWeight: '700', alignSelf: 'flex-end' },
 });

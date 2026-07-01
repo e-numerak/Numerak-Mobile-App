@@ -12,12 +12,14 @@ import {
   Linking,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import {
   useCustomer,
   useUpdateCustomer,
   useDeleteCustomer,
 } from '../../../../../../src/hooks/useCustomers';
+import { API_BASE_URL } from '../../../../../../src/constants/api';
 import type { CustomerType, UpdateCustomerPayload } from '../../../../../../src/types/customer.types';
 
 const NAVY = '#1e3a5f';
@@ -202,25 +204,36 @@ export default function CustomerDetailScreen() {
         }}
       />
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        {/* ── Header card ── */}
-        <View style={styles.headerCard}>
-          {customer.logo ? (
-            <Image source={{ uri: customer.logo }} style={styles.logoImage} />
-          ) : (
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>{customer.name?.[0]?.toUpperCase() ?? 'C'}</Text>
+        {/* ── Gradient hero header ── */}
+        {!isEditing && (
+          <LinearGradient
+            colors={['#1e3a5f', '#16314f', '#0c1d30']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hero}
+          >
+            <View style={styles.heroRow}>
+              {customer.logo ? (
+                <Image source={{ uri: customer.logo }} style={styles.heroLogo} />
+              ) : (
+                <View style={styles.heroAvatar}>
+                  <Text style={styles.heroAvatarText}>
+                    {(customer.name || '?').slice(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.heroName}>{customer.name}</Text>
+                <Text style={styles.heroType}>{customer.customer_type_display}</Text>
+              </View>
+              {!customer.is_active && (
+                <View style={styles.inactiveBadge}>
+                  <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
+                </View>
+              )}
             </View>
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={styles.customerName}>{customer.name}</Text>
-            <Text style={styles.customerType}>{customer.customer_type_display}</Text>
-          </View>
-          {!customer.is_active && (
-            <View style={styles.inactiveBadge}>
-              <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
-            </View>
-          )}
-        </View>
+          </LinearGradient>
+        )}
 
         {/* ── Completeness progress ── */}
         {!isEditing && (
@@ -291,7 +304,10 @@ export default function CustomerDetailScreen() {
             {isDeleting ? (
               <ActivityIndicator color={ERROR} />
             ) : (
-              <Text style={styles.deactivateButtonText}>Deactivate customer</Text>
+              <>
+                <Feather name="slash" size={16} color={ERROR} />
+                <Text style={styles.deactivateButtonText}>Deactivate customer</Text>
+              </>
             )}
           </TouchableOpacity>
         )}
@@ -317,8 +333,23 @@ function ViewFields({ customer }: { customer: any }) {
     { label: 'Notes', value: customer.notes },
   ];
 
-  const openUrl = (url?: string | null) => {
-    if (url) Linking.openURL(url).catch(() => {});
+  // Media URLs may come back relative (e.g. "/media/...") — make them absolute
+  // before handing off to the OS, otherwise the link silently does nothing.
+  const openUrl = async (raw?: string | null) => {
+    if (!raw) {
+      Alert.alert('Not available', 'This file has not been uploaded for this customer.');
+      return;
+    }
+    const url = /^https?:\/\//i.test(raw)
+      ? raw
+      : `${API_BASE_URL}${raw.startsWith('/') ? '' : '/'}${raw}`;
+    try {
+      const ok = await Linking.canOpenURL(url);
+      if (!ok) throw new Error('cannot open');
+      await Linking.openURL(url);
+    } catch {
+      Alert.alert('Could not open', 'Unable to open this file. Please try again later.');
+    }
   };
 
   return (
@@ -428,20 +459,22 @@ const styles = StyleSheet.create({
 
   headerActionText: { color: '#fff', fontSize: 16, fontWeight: '700', marginRight: 12 },
 
-  headerCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16,
-    padding: 16, marginBottom: 16, borderWidth: 1, borderColor: BORDER,
+  hero: {
+    borderRadius: 20, padding: 18, marginBottom: 14,
+    shadowColor: '#1e3a5f', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, shadowRadius: 14, elevation: 5,
   },
-  avatarCircle: {
-    width: 52, height: 52, borderRadius: 14, backgroundColor: NAVY,
-    alignItems: 'center', justifyContent: 'center', marginRight: 14,
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  heroLogo: { width: 54, height: 54, borderRadius: 14, backgroundColor: '#fff' },
+  heroAvatar: {
+    width: 54, height: 54, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center',
   },
-  logoImage: { width: 52, height: 52, borderRadius: 14, marginRight: 14 },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  customerName: { fontSize: 17, fontWeight: '700', color: NAVY },
-  customerType: { fontSize: 12, color: SLATE, marginTop: 2 },
-  inactiveBadge: { backgroundColor: '#fef2f2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  inactiveBadgeText: { fontSize: 10, fontWeight: '700', color: ERROR },
+  heroAvatarText: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  heroName: { fontSize: 19, fontWeight: '800', color: '#fff', letterSpacing: -0.3 },
+  heroType: { fontSize: 13, color: '#cbd5e1', marginTop: 3 },
+  inactiveBadge: { backgroundColor: 'rgba(248,113,113,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  inactiveBadgeText: { fontSize: 10, fontWeight: '800', color: '#fca5a5', letterSpacing: 0.5 },
 
   completenessCard: {
     borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1,
@@ -495,7 +528,7 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   disabledButton: { opacity: 0.6 },
 
-  deactivateButton: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3' },
+  deactivateButton: { flexDirection: 'row', gap: 8, paddingVertical: 15, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3' },
   deactivateButtonText: { color: ERROR, fontSize: 15, fontWeight: '700' },
 
   errorIcon: { fontSize: 48, marginBottom: 16 },

@@ -15,6 +15,7 @@ import { useInvoices } from '../../../src/hooks/useInvoices';
 import { InvoiceStatusBadge } from '../../../src/components/InvoiceStatusBadge';
 import { INVOICE_ENDPOINTS } from '../../../src/constants/api';
 import { downloadAndShare } from '../../../src/utils/downloads';
+import { LoadingScreen, SkeletonList } from '../../../src/components/Loading';
 import type { Company } from '../../../src/types/company.types';
 import type { InvoiceListItem, InvoiceStatus } from '../../../src/types/invoice.types';
 
@@ -80,11 +81,7 @@ export default function InvoicesScreen() {
 
   // ── No companies at all ────────────────────────────────────────────────────
   if (companiesLoading) {
-    return (
-      <View style={styles.centerScreen}>
-        <ActivityIndicator size="large" color={NAVY} />
-      </View>
-    );
+    return <LoadingScreen label="Loading your workspace…" />;
   }
 
   if (!companies || companies.length === 0) {
@@ -218,9 +215,7 @@ export default function InvoicesScreen() {
 
       {/* List */}
       {isLoading ? (
-        <View style={styles.centerFlex}>
-          <ActivityIndicator size="large" color={NAVY} />
-        </View>
+        <SkeletonList count={6} />
       ) : isError ? (
         <View style={styles.centerFlex}>
           <Text style={styles.emoji}>⚠️</Text>
