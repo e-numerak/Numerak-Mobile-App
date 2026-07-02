@@ -21,6 +21,7 @@ const MENU_ITEMS: MenuItem[] = [
   { label: 'Customers', route: '/customers', icon: 'users' },
   { label: 'Invoices', route: '/invoices', icon: 'file-text' },
   { label: 'Product Catalog', route: '/invoices/products', icon: 'package' },
+  { label: 'Receivables', route: '/receivables', icon: 'dollar-sign' },
   { label: 'Reports', route: '/reports', icon: 'bar-chart-2' },
   { label: 'Settings', route: '/settings/profile', icon: 'settings' },
 ];
@@ -253,6 +254,7 @@ export default function AppLayout() {
         <Drawer.Screen name="companies/index" options={{ title: 'Companies' }} />
         <Drawer.Screen name="customers/index" options={{ title: 'Customers' }} />
         <Drawer.Screen name="invoices/index" options={{ title: 'Invoices' }} />
+        <Drawer.Screen name="receivables/index" options={{ title: 'Receivables' }} />
         <Drawer.Screen name="reports/index" options={{ title: 'Reports' }} />
         <Drawer.Screen name="settings/profile" options={{ title: 'Settings' }} />
       </Drawer>

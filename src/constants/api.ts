@@ -120,6 +120,17 @@ export const INBOUND_ENDPOINTS = {
 };
 
 // ───────────────────────────────────────────
+// Reports — /api/v1/reports/ (Accounts Receivable, supplier-scoped)
+// ───────────────────────────────────────────
+export const REPORT_ENDPOINTS = {
+  arSummary: `${API_URL}/reports/ar/summary/`,
+  arAging: `${API_URL}/reports/ar/aging/`,
+  arByCustomer: `${API_URL}/reports/ar/by-customer/`,
+  arStatement: (customerId: string) =>
+    `${API_URL}/reports/ar/customer/${customerId}/statement/`,
+};
+
+// ───────────────────────────────────────────
 // Other modules
 // ───────────────────────────────────────────
 export const REPORTS_URL = `${API_URL}/reports/`;

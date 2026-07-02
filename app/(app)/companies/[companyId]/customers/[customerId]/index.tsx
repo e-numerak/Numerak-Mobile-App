@@ -192,17 +192,7 @@ export default function CustomerDetailScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: isEditing ? 'Edit Customer' : customer.name,
-          headerRight: () =>
-            isEditing ? null : (
-              <TouchableOpacity onPress={() => setIsEditing(true)}>
-                <Text style={styles.headerActionText}>Edit</Text>
-              </TouchableOpacity>
-            ),
-        }}
-      />
+      <Stack.Screen options={{ title: customer.name }} />
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         {/* ── Gradient hero header ── */}
         {!isEditing && (
@@ -281,36 +271,13 @@ export default function CustomerDetailScreen() {
           <ViewFields customer={customer} />
         )}
 
-        {/* ── Action buttons ── */}
-        {isEditing ? (
-          <View style={styles.editActions}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} disabled={isSaving}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.saveButton, isSaving && styles.disabledButton]}
-              onPress={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Save changes</Text>}
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.deactivateButton, isDeleting && styles.disabledButton]}
-            onPress={handleDeactivate}
-            disabled={isDeleting}
-          >
-            {isDeleting ? (
-              <ActivityIndicator color={ERROR} />
-            ) : (
-              <>
-                <Feather name="slash" size={16} color={ERROR} />
-                <Text style={styles.deactivateButtonText}>Deactivate customer</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
+        {/* Customer edit & deactivation are admin-only — managed outside the app. */}
+        <View style={styles.adminNote}>
+          <Feather name="lock" size={14} color={SLATE} />
+          <Text style={styles.adminNoteText}>
+            Customer details can only be changed by an administrator.
+          </Text>
+        </View>
       </ScrollView>
     </>
   );
@@ -530,6 +497,13 @@ const styles = StyleSheet.create({
 
   deactivateButton: { flexDirection: 'row', gap: 8, paddingVertical: 15, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fecdd3' },
   deactivateButtonText: { color: ERROR, fontSize: 15, fontWeight: '700' },
+
+  adminNote: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, marginTop: 2,
+    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: BORDER,
+  },
+  adminNoteText: { color: SLATE, fontSize: 13, fontWeight: '500' },
 
   errorIcon: { fontSize: 48, marginBottom: 16 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: NAVY, marginBottom: 16 },
