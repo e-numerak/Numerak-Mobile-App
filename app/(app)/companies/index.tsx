@@ -1,15 +1,20 @@
-import { useState } from 'react';
+import { useRef } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 import { useCompanies } from '../../../src/hooks/useCompanies';
+import { Shimmer } from '../../../src/components/Loading';
+import { AnimatedNumber, RefreshSpinner } from '../../../src/components/AnimatedUI';
 import type { Company } from '../../../src/types/company.types';
 
 const NAVY = '#1e3a5f';
@@ -22,11 +27,25 @@ export default function CompaniesScreen() {
   const { data: companies, isLoading, isError, error, refetch, isRefetching } =
     useCompanies();
 
-  // ── Loading state ──────────────────────────
+  // ── Loading state (shimmer skeletons) ──────
   if (isLoading) {
     return (
-      <View style={styles.centerScreen}>
-        <ActivityIndicator size="large" color={NAVY} />
+      <View style={[styles.screen, styles.listContent]}>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <View key={i} style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Shimmer width={44} height={44} radius={12} />
+              <View style={{ flex: 1, marginLeft: 12, gap: 8 }}>
+                <Shimmer width="55%" height={16} />
+                <Shimmer width="35%" height={12} />
+              </View>
+            </View>
+            <View style={[styles.cardFooter, { borderTopColor: '#f1f5f9' }]}>
+              <Shimmer width="40%" height={12} />
+              <Shimmer width="25%" height={12} />
+            </View>
+          </View>
+        ))}
       </View>
     );
   }
@@ -67,14 +86,47 @@ export default function CompaniesScreen() {
   }
 
   // ── List state ───────────────────────────────
+  const totalMembers = companies.reduce((sum, c) => sum + (c.member_count ?? 0), 0);
+  const activeCount = companies.filter((c) => c.is_active).length;
+
+  const onRefresh = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    refetch();
+  };
+
   return (
     <View style={styles.screen}>
+      {/* Custom animated refresh indicator */}
+      <RefreshSpinner visible={isRefetching} color={NAVY} />
+
+      {/* Animated metrics strip */}
+      <View style={styles.metricsStrip}>
+        <View style={styles.metricItem}>
+          <Feather name="briefcase" size={14} color={SLATE} />
+          <AnimatedNumber
+            value={companies.length}
+            format={(n) => `${Math.round(n)} compan${Math.round(n) === 1 ? 'y' : 'ies'}`}
+            style={styles.metricText}
+          />
+        </View>
+        <View style={styles.metricDivider} />
+        <View style={styles.metricItem}>
+          <Feather name="check-circle" size={14} color={SLATE} />
+          <AnimatedNumber value={activeCount} format={(n) => `${Math.round(n)} active`} style={styles.metricText} />
+        </View>
+        <View style={styles.metricDivider} />
+        <View style={styles.metricItem}>
+          <Feather name="users" size={14} color={SLATE} />
+          <AnimatedNumber value={totalMembers} format={(n) => `${Math.round(n)} members`} style={styles.metricTextStrong} />
+        </View>
+      </View>
+
       <FlatList
         data={companies}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} colors={[NAVY]} />
+          <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={NAVY} colors={[NAVY]} progressBackgroundColor="#fff" />
         }
         renderItem={({ item }) => <CompanyCard company={item} router={router} />}
       />
@@ -82,7 +134,10 @@ export default function CompaniesScreen() {
       {/* Floating Add button */}
       <TouchableOpacity
         style={styles.fab}
-        onPress={() => router.push('/companies/create' as any)}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+          router.push('/companies/create' as any);
+        }}
         activeOpacity={0.85}
       >
         <Text style={styles.fabText}>+</Text>
@@ -95,32 +150,86 @@ export default function CompaniesScreen() {
 // Company Card
 // ───────────────────────────────────────────
 function CompanyCard({ company, router }: { company: Company; router: ReturnType<typeof useRouter> }) {
-  return (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.7}
-      onPress={() => router.push(`/companies/${company.id}` as any)}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{company.name?.[0]?.toUpperCase() ?? 'C'}</Text>
-        </View>
-        <View style={styles.cardHeaderText}>
-          <Text style={styles.companyName}>{company.name}</Text>
-          <Text style={styles.companyTrn}>TRN: {company.trn}</Text>
-        </View>
-        {!company.is_active && (
-          <View style={styles.inactiveBadge}>
-            <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
-          </View>
-        )}
-      </View>
+  const swipeRef = useRef<Swipeable>(null);
 
-      <View style={styles.cardFooter}>
-        <Text style={styles.cardFooterText}>📍 {company.city}, {company.emirate?.replace('_', ' ')}</Text>
-        <Text style={styles.cardFooterText}>👥 {company.member_count} member{company.member_count === 1 ? '' : 's'}</Text>
+  const go = (path: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    swipeRef.current?.close();
+    router.push(path as any);
+  };
+
+  const renderRightActions = (
+    _p: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-150, -75, 0],
+      outputRange: [1, 0.9, 0.6],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View style={styles.swipeActions}>
+        <Animated.View style={{ transform: [{ scale }], flexDirection: 'row' }}>
+          <TouchableOpacity
+            style={[styles.swipeBtn, { backgroundColor: '#0d9488' }]}
+            onPress={() => go(`/companies/${company.id}/customers`)}
+            activeOpacity={0.85}
+          >
+            <Feather name="users" size={16} color="#fff" />
+            <Text style={styles.swipeBtnText}>Customers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.swipeBtn, { backgroundColor: NAVY }]}
+            onPress={() => go(`/invoices?companyId=${company.id}`)}
+            activeOpacity={0.85}
+          >
+            <Feather name="file-text" size={16} color="#fff" />
+            <Text style={styles.swipeBtnText}>Invoices</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
-    </TouchableOpacity>
+    );
+  };
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      friction={2}
+      rightThreshold={40}
+      onSwipeableWillOpen={() => Haptics.selectionAsync().catch(() => {})}
+      containerStyle={styles.swipeContainer}
+    >
+      <TouchableOpacity
+        style={styles.card}
+        activeOpacity={0.7}
+        onPress={() => {
+          Haptics.selectionAsync().catch(() => {});
+          router.push(`/companies/${company.id}` as any);
+        }}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>{company.name?.[0]?.toUpperCase() ?? 'C'}</Text>
+          </View>
+          <View style={styles.cardHeaderText}>
+            <Text style={styles.companyName}>{company.name}</Text>
+            <Text style={styles.companyTrn}>TRN: {company.trn}</Text>
+          </View>
+          {!company.is_active && (
+            <View style={styles.inactiveBadge}>
+              <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.cardFooter}>
+          <Text style={styles.cardFooterText}>📍 {company.city}, {company.emirate?.replace('_', ' ')}</Text>
+          <Text style={styles.cardFooterText}>👥 {company.member_count} member{company.member_count === 1 ? '' : 's'}</Text>
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
   );
 }
 
@@ -137,19 +246,34 @@ const styles = StyleSheet.create({
 
   listContent: { padding: 16, paddingBottom: 100 },
 
+  // Animated metrics strip
+  metricsStrip: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginTop: 12,
+    paddingVertical: 10, paddingHorizontal: 14,
+    backgroundColor: '#fff', borderRadius: 12,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  metricItem: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, justifyContent: 'center' },
+  metricDivider: { width: 1, height: 20, backgroundColor: '#eef2f7' },
+  metricText: { fontSize: 12, color: SLATE, fontWeight: '600' },
+  metricTextStrong: { fontSize: 12.5, color: NAVY, fontWeight: '800' },
+
+  // Swipe
+  swipeContainer: { marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
+  swipeActions: { flexDirection: 'row', alignItems: 'stretch' },
+  swipeBtn: {
+    width: 82, alignItems: 'center', justifyContent: 'center', gap: 4, alignSelf: 'stretch',
+  },
+  swipeBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+
   // Card
   card: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: BORDER,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 1,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center' },
   avatarCircle: {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,13 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 import { useAuthStore } from '../../src/store/authStore';
 import { tokenStorage } from '../../src/utils/tokenStorage';
@@ -32,6 +35,73 @@ export default function LoginScreen() {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+
+  // ---- Animations (visual only — no effect on functionality) ----
+  const headerAnim = useRef(new Animated.Value(0)).current; // 0 -> 1 entrance
+  const cardAnim = useRef(new Animated.Value(0)).current; // 0 -> 1 entrance
+  const logoScale = useRef(new Animated.Value(0.6)).current;
+  const glow = useRef(new Animated.Value(0)).current; // logo halo pulse loop
+  const floatA = useRef(new Animated.Value(0)).current; // top circle drift
+  const floatB = useRef(new Animated.Value(0)).current; // bottom circle drift
+  const btnScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Staggered entrance
+    Animated.sequence([
+      Animated.spring(logoScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 80,
+        useNativeDriver: true,
+      }),
+      Animated.stagger(120, [
+        Animated.timing(headerAnim, {
+          toValue: 1,
+          duration: 500,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(cardAnim, {
+          toValue: 1,
+          duration: 550,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start();
+
+    // Continuous loops
+    const loop = (val: Animated.Value, duration: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(val, {
+            toValue: 1,
+            duration,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(val, {
+            toValue: 0,
+            duration,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+
+    const g = loop(glow, 1600);
+    const a = loop(floatA, 5000);
+    const b = loop(floatB, 6500);
+    g.start();
+    a.start();
+    b.start();
+
+    return () => {
+      g.stop();
+      a.stop();
+      b.stop();
+    };
+  }, []);
 
   // Pre-fill the remembered email + password (saved on a previous
   // "Remember me" login, in the encrypted SecureStore).
@@ -66,14 +136,18 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
     const emailValidationError = validateEmail(email);
     setEmailError(emailValidationError);
 
     if (emailValidationError) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       return;
     }
 
     if (!password.trim()) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
       Alert.alert('Missing Information', 'Please enter your password.');
       return;
     }
@@ -120,9 +194,37 @@ export default function LoginScreen() {
       end={{ x: 1, y: 1 }}
       style={styles.gradient}
     >
-      {/* Decorative blurred accent circles */}
-      <View style={styles.circleTop} />
-      <View style={styles.circleBottom} />
+      {/* Decorative floating accent circles */}
+      <Animated.View
+        style={[
+          styles.circleTop,
+          {
+            transform: [
+              {
+                translateY: floatA.interpolate({ inputRange: [0, 1], outputRange: [0, 26] }),
+              },
+              {
+                translateX: floatA.interpolate({ inputRange: [0, 1], outputRange: [0, -18] }),
+              },
+            ],
+          },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.circleBottom,
+          {
+            transform: [
+              {
+                translateY: floatB.interpolate({ inputRange: [0, 1], outputRange: [0, -30] }),
+              },
+              {
+                translateX: floatB.interpolate({ inputRange: [0, 1], outputRange: [0, 22] }),
+              },
+            ],
+          },
+        ]}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -133,15 +235,66 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.headerSection}>
-            <View style={styles.logoCircle}>
-              <Text style={styles.logoText}>EN</Text>
-            </View>
+          <Animated.View
+            style={[
+              styles.headerSection,
+              {
+                opacity: headerAnim,
+                transform: [
+                  {
+                    translateY: headerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [18, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <Animated.View style={{ transform: [{ scale: logoScale }] }}>
+              {/* Pulsing halo behind the logo */}
+              <Animated.View
+                style={[
+                  styles.logoGlow,
+                  {
+                    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.7] }),
+                    transform: [
+                      {
+                        scale: glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.28] }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+              <LinearGradient
+                colors={['#3b82f6', '#2563eb', '#1d4ed8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.logoCircle}
+              >
+                <Text style={styles.logoText}>EN</Text>
+              </LinearGradient>
+            </Animated.View>
             <Text style={styles.title}>E-Numerak</Text>
             <Text style={styles.subtitle}>Sign in to your account</Text>
-          </View>
+          </Animated.View>
 
-          <View style={styles.card}>
+          <Animated.View
+            style={[
+              styles.card,
+              {
+                opacity: cardAnim,
+                transform: [
+                  {
+                    translateY: cardAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [30, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <View style={styles.form}>
               <View style={styles.labelRow}>
                 <Text style={styles.label}>Email</Text>
@@ -154,7 +307,7 @@ export default function LoginScreen() {
                   emailError && styles.inputError,
                 ]}
                 placeholder="you@example.com"
-                placeholderTextColor="#a0a0a0"
+                placeholderTextColor={colors.textMuted}
                 value={email}
                 onChangeText={handleEmailChange}
                 onFocus={() => setEmailFocused(true)}
@@ -178,7 +331,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.passwordInput}
                   placeholder="Enter your password"
-                  placeholderTextColor="#a0a0a0"
+                  placeholderTextColor={colors.textMuted}
                   value={password}
                   onChangeText={setPassword}
                   onFocus={() => setPasswordFocused(true)}
@@ -196,7 +349,7 @@ export default function LoginScreen() {
                   <Feather
                     name={showPassword ? 'eye-off' : 'eye'}
                     size={20}
-                    color="#64748b"
+                    color={colors.textSecondary}
                   />
                 </TouchableOpacity>
               </View>
@@ -223,18 +376,43 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity
-                style={[styles.button, isAuthLoading && styles.buttonDisabled]}
-                onPress={handleLogin}
-                disabled={isAuthLoading}
-                activeOpacity={0.85}
-              >
-                {isAuthLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Login</Text>
-                )}
-              </TouchableOpacity>
+              <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+                <TouchableOpacity
+                  onPress={handleLogin}
+                  onPressIn={() =>
+                    Animated.spring(btnScale, {
+                      toValue: 0.97,
+                      useNativeDriver: true,
+                    }).start()
+                  }
+                  onPressOut={() =>
+                    Animated.spring(btnScale, {
+                      toValue: 1,
+                      friction: 4,
+                      useNativeDriver: true,
+                    }).start()
+                  }
+                  disabled={isAuthLoading}
+                  activeOpacity={0.9}
+                >
+                  <LinearGradient
+                    colors={
+                      isAuthLoading
+                        ? ['#93b4f0', '#93b4f0']
+                        : ['#3b82f6', '#2563eb', '#1d4ed8']
+                    }
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.button}
+                  >
+                    {isAuthLoading ? (
+                      <ActivityIndicator color={colors.textOnDark} />
+                    ) : (
+                      <Text style={styles.buttonText}>Login</Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
 
               <View style={styles.registerRow}>
                 <Text style={styles.registerText}>Don't have an account? </Text>
@@ -246,21 +424,89 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Design tokens
+// ---------------------------------------------------------------------------
+const colors = {
+  primary: '#2563eb',
+  primaryDark: '#1d4ed8',
+  primarySoft: 'rgba(37, 99, 235, 0.16)',
+  accentSoft: 'rgba(96, 165, 250, 0.18)',
+
+  danger: '#e11d48',
+
+  textPrimary: '#0f172a',
+  textSecondary: '#475569',
+  textMuted: '#64748b',
+  textOnDark: '#ffffff',
+  textOnDarkMuted: '#cbd5e1',
+
+  border: '#e2e5ec',
+  borderFocus: '#2563eb',
+
+  surface: '#ffffff',
+  surfaceMuted: '#f9fafc',
+
+  white: '#ffffff',
+  overlayBorder: 'rgba(255, 255, 255, 0.25)',
+};
+
+const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 14,
+  lg: 20,
+  xl: 28,
+  xxl: 40,
+};
+
+const radius = {
+  sm: 6,
+  md: 12,
+  lg: 20,
+  pill: 35,
+};
+
+const typography = {
+  title: { fontSize: 30, fontWeight: '800' as const, letterSpacing: -0.5 },
+  subtitle: { fontSize: 14, fontWeight: '500' as const, letterSpacing: 0.2 },
+  label: { fontSize: 13, fontWeight: '600' as const, letterSpacing: 0.2 },
+  body: { fontSize: 15, fontWeight: '400' as const },
+  button: { fontSize: 16, fontWeight: '700' as const, letterSpacing: 0.8 },
+  caption: { fontSize: 12, fontWeight: '500' as const },
+};
+
+const shadow = (
+  elevation: number,
+  opacity = 0.15,
+  radiusPx = 10,
+  color = '#000'
+) => ({
+  shadowColor: color,
+  shadowOffset: { width: 0, height: Math.round(elevation / 1.5) },
+  shadowOpacity: opacity,
+  shadowRadius: radiusPx,
+  elevation,
+});
+
+// ---------------------------------------------------------------------------
+// Stylesheet
+// ---------------------------------------------------------------------------
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
   flex: { flex: 1 },
   scrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 40,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xxl,
   },
 
   // Decorative accent circles
@@ -271,7 +517,7 @@ const styles = StyleSheet.create({
     width: 220,
     height: 220,
     borderRadius: 110,
-    backgroundColor: 'rgba(96,165,250,0.18)',
+    backgroundColor: colors.accentSoft,
   },
   circleBottom: {
     position: 'absolute',
@@ -280,119 +526,128 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 120,
-    backgroundColor: 'rgba(37,99,235,0.16)',
+    backgroundColor: colors.primarySoft,
   },
 
+  // Header
   headerSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: spacing.xl,
+  },
+  logoGlow: {
+    position: 'absolute',
+    top: -9,
+    left: -9,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: '#60a5fa',
   },
   logoCircle: {
     width: 70,
     height: 70,
-    borderRadius: 35,
-    backgroundColor: '#2563eb',
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: spacing.md,
     borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.25)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    borderColor: colors.overlayBorder,
+    ...shadow(5, 0.3, 8),
   },
   logoText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: '800',
+    ...typography.title,
+    fontSize: 25,
+    letterSpacing: 1,
+    color: colors.textOnDark,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
+    ...typography.title,
     textAlign: 'center',
-    color: '#fff',
+    color: colors.textOnDark,
   },
   subtitle: {
-    fontSize: 14,
+    ...typography.subtitle,
     textAlign: 'center',
-    color: '#cbd5e1',
-    marginTop: 4,
+    color: colors.textOnDarkMuted,
+    marginTop: spacing.xs,
   },
+
+  // Card / form container
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     padding: 22,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 8,
+    ...shadow(8, 0.2, 20),
   },
   form: {
     width: '100%',
   },
+
+  // Field labels
   labelRow: {
     flexDirection: 'row',
-    marginTop: 14,
-    marginBottom: 6,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm - 2,
   },
   label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#333',
+    ...typography.label,
+    color: colors.textPrimary,
   },
   required: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#e11d48',
+    color: colors.danger,
   },
+
+  // Text inputs
   input: {
     borderWidth: 1.5,
-    borderColor: '#e2e5ec',
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     paddingVertical: 12,
-    fontSize: 15,
-    backgroundColor: '#f9fafc',
-    color: '#111',
+    ...typography.body,
+    backgroundColor: colors.surfaceMuted,
+    color: colors.textPrimary,
   },
   inputFocused: {
-    borderColor: '#2563eb',
-    backgroundColor: '#fff',
+    borderColor: colors.borderFocus,
+    backgroundColor: colors.surface,
   },
+  inputError: {
+    borderColor: colors.danger,
+  },
+  errorText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: '400',
+    marginTop: spacing.xs + 2,
+  },
+
+  // Password field
   passwordWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1.5,
-    borderColor: '#e2e5ec',
-    borderRadius: 12,
-    backgroundColor: '#f9fafc',
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
   },
   passwordInput: {
     flex: 1,
-    paddingHorizontal: 14,
+    paddingHorizontal: spacing.md,
     paddingVertical: 12,
-    fontSize: 15,
-    color: '#111',
+    ...typography.body,
+    color: colors.textPrimary,
   },
   showBtn: {
-    paddingHorizontal: 14,
+    paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
   showBtnText: {
-    color: '#2563eb',
+    color: colors.primary,
     fontSize: 13,
     fontWeight: '700',
-  },
-  inputError: {
-    borderColor: '#e11d48',
-  },
-  errorText: {
-    color: '#e11d48',
-    fontSize: 12,
-    marginTop: 6,
   },
 
   // Remember me row
@@ -400,7 +655,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginTop: spacing.md + 2,
   },
   checkboxWrap: {
     flexDirection: 'row',
@@ -409,66 +664,64 @@ const styles = StyleSheet.create({
   checkbox: {
     width: 20,
     height: 20,
-    borderRadius: 6,
+    borderRadius: radius.sm,
     borderWidth: 1.5,
     borderColor: '#cbd5e1',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 8,
-    backgroundColor: '#fff',
+    marginRight: spacing.sm,
+    backgroundColor: colors.surface,
   },
   checkboxChecked: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   checkboxTick: {
-    color: '#fff',
+    color: colors.textOnDark,
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 16,
   },
   rememberText: {
     fontSize: 13,
-    color: '#475569',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   forgotLink: {
-    color: '#2563eb',
+    color: colors.primary,
     fontSize: 13,
     fontWeight: '600',
   },
 
+  // Primary button
   button: {
-    backgroundColor: '#2563eb',
-    borderRadius: 12,
-    paddingVertical: 15,
+    borderRadius: radius.md,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 22,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    justifyContent: 'center',
+    marginTop: spacing.xl - 6,
+    ...shadow(6, 0.35, 12, colors.primary),
   },
   buttonDisabled: {
     opacity: 0.6,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    ...typography.button,
+    color: colors.textOnDark,
   },
+
+  // Footer / register row
   registerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: spacing.lg,
   },
   registerText: {
-    color: '#666',
+    color: colors.textMuted,
     fontSize: 14,
   },
   registerLink: {
-    color: '#2563eb',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '600',
   },

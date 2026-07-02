@@ -4,10 +4,13 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useCompanies } from '../../../src/hooks/useCompanies';
+import { Shimmer } from '../../../src/components/Loading';
+import { RefreshSpinner } from '../../../src/components/AnimatedUI';
 import type { Company } from '../../../src/types/company.types';
 
 const NAVY = '#1e3a5f';
@@ -17,12 +20,28 @@ const BG = '#f6f8fb';
 
 export default function CustomersCompanyPickerScreen() {
   const router = useRouter();
-  const { data: companies, isLoading, isError, refetch } = useCompanies();
+  const { data: companies, isLoading, isError, refetch, isRefetching } = useCompanies();
+
+  const onRefresh = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    refetch();
+  };
 
   if (isLoading) {
     return (
-      <View style={styles.centerScreen}>
-        <ActivityIndicator size="large" color={NAVY} />
+      <View style={styles.screen}>
+        <Text style={styles.headerText}>Select a company to view its customers</Text>
+        <View style={styles.listContent}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <View key={i} style={styles.row}>
+              <Shimmer width={42} height={42} radius={12} />
+              <View style={{ flex: 1, marginLeft: 12, gap: 8 }}>
+                <Shimmer width="55%" height={15} />
+                <Shimmer width="35%" height={12} />
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -57,12 +76,22 @@ export default function CustomersCompanyPickerScreen() {
   return (
     <View style={styles.screen}>
       <Text style={styles.headerText}>Select a company to view its customers</Text>
+      <RefreshSpinner visible={isRefetching} color={NAVY} />
       <FlatList
         data={companies}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={NAVY} colors={[NAVY]} progressBackgroundColor="#fff" />
+        }
         renderItem={({ item }) => (
-          <CompanyRow company={item} onPress={() => router.push(`/companies/${item.id}/customers` as any)} />
+          <CompanyRow
+            company={item}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              router.push(`/companies/${item.id}/customers` as any);
+            }}
+          />
         )}
       />
     </View>

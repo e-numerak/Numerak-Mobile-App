@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, Text, Animated, StyleSheet, Easing } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
@@ -38,6 +39,70 @@ export function Skeleton({
         style,
       ]}
     />
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Shimmer — a placeholder block with a light sweep moving across it.
+// Same API as <Skeleton/> but with a true shimmer highlight.
+// ─────────────────────────────────────────────────────────────
+export function Shimmer({
+  width = '100%',
+  height = 14,
+  radius = 8,
+  base = '#e2e8f0',
+  highlight = 'rgba(255,255,255,0.65)',
+  style,
+}: {
+  width?: number | `${number}%` | 'auto';
+  height?: number;
+  radius?: number;
+  base?: string;
+  highlight?: string;
+  style?: object;
+}) {
+  const x = useRef(new Animated.Value(0)).current;
+  const [w, setW] = useState(0);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(x, {
+        toValue: 1,
+        duration: 1150,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [x]);
+
+  const translateX = x.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-w, w],
+  });
+
+  return (
+    <View
+      onLayout={(e) => setW(e.nativeEvent.layout.width)}
+      style={[
+        { width, height, borderRadius: radius, backgroundColor: base, overflow: 'hidden' },
+        style,
+      ]}
+    >
+      {w > 0 && (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, { transform: [{ translateX }] }]}
+        >
+          <LinearGradient
+            colors={['transparent', highlight, 'transparent']}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={{ flex: 1 }}
+          />
+        </Animated.View>
+      )}
+    </View>
   );
 }
 

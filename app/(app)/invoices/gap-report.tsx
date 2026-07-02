@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
 
   subtitle: { fontSize: 13, color: SLATE, marginBottom: 12 },
 
-  chipsScroll: { flexGrow: 0, marginBottom: 12 },
+  chipsScroll: { flexGrow: 0, height: 46, marginBottom: 12 },
   chipsRow: { gap: 8, alignItems: 'center' },
   chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER },
   chipActive: { backgroundColor: NAVY, borderColor: NAVY },

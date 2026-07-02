@@ -19,7 +19,7 @@ import {
   useUpdateCompany,
   useDeleteCompany,
 } from '../../../../src/hooks/useCompanies';
-import { LoadingScreen } from '../../../../src/components/Loading';
+import { Shimmer } from '../../../../src/components/Loading';
 import type { Emirate, LegalRegistrationType, UpdateCompanyPayload } from '../../../../src/types/company.types';
 
 const NAVY = '#1e3a5f';
@@ -157,18 +157,26 @@ export default function CompanyDetailScreen() {
   };
 
   if (isLoading) {
-    return <LoadingScreen label="Loading company…" />;
+    return (
+      <>
+        <Stack.Screen options={{ title: 'Company', headerBackTitle: 'Back' }} />
+        <DetailSkeleton />
+      </>
+    );
   }
 
   if (isError || !company) {
     return (
-      <View style={styles.centerScreen}>
-        <Feather name="alert-triangle" size={44} color={ERROR} style={{ marginBottom: 14 }} />
-        <Text style={styles.errorTitle}>Couldn't load this company</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
-          <Text style={styles.retryButtonText}>Try again</Text>
-        </TouchableOpacity>
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Company' }} />
+        <View style={styles.centerScreen}>
+          <Feather name="alert-triangle" size={44} color={ERROR} style={{ marginBottom: 14 }} />
+          <Text style={styles.errorTitle}>Couldn't load this company</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+            <Text style={styles.retryButtonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      </>
     );
   }
 
@@ -294,6 +302,43 @@ export default function CompanyDetailScreen() {
         )}
       </ScrollView>
     </>
+  );
+}
+
+// ───────────────────────────────────────────
+// Loading skeleton — mirrors the detail layout
+// ───────────────────────────────────────────
+function DetailSkeleton() {
+  return (
+    <View style={styles.screen}>
+      <View style={styles.content}>
+        {/* Hero placeholder */}
+        <View style={styles.heroSkeleton}>
+          <View style={styles.heroSkeletonTop}>
+            <Shimmer width={54} height={54} radius={14} base="#e6eaf0" highlight="#f3f6fa" />
+            <Shimmer width={70} height={26} radius={999} base="#e6eaf0" highlight="#f3f6fa" />
+          </View>
+          <Shimmer width="62%" height={22} radius={7} base="#e6eaf0" highlight="#f3f6fa" style={{ marginTop: 16 }} />
+          <Shimmer width="40%" height={13} radius={6} base="#e6eaf0" highlight="#f3f6fa" style={{ marginTop: 10 }} />
+        </View>
+
+        {/* Two field-group placeholders */}
+        {[0, 1].map((g) => (
+          <View key={g} style={styles.card}>
+            <View style={styles.groupHead}>
+              <Shimmer width={28} height={28} radius={8} />
+              <Shimmer width="35%" height={13} />
+            </View>
+            {[0, 1, 2].map((r) => (
+              <View key={r} style={[styles.viewRow, r === 2 && styles.viewRowLast]}>
+                <Shimmer width="30%" height={13} />
+                <Shimmer width="42%" height={13} />
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -507,6 +552,13 @@ const styles = StyleSheet.create({
   activeBadgeText: { fontSize: 11, fontWeight: '700', color: '#bbf7d0' },
   inactiveBadge: { backgroundColor: 'rgba(248,113,113,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
   inactiveBadgeText: { fontSize: 10, fontWeight: '800', color: '#fca5a5', letterSpacing: 0.5 },
+
+  // Loading skeleton
+  heroSkeleton: {
+    backgroundColor: '#fff', borderRadius: 20, padding: 20, marginBottom: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  heroSkeletonTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
   // Grouped view card
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: BORDER },

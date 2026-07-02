@@ -1,21 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
+  RefreshControl,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { Swipeable } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
+import * as Clipboard from 'expo-clipboard';
 import { useCompanies } from '../../../src/hooks/useCompanies';
 import { useInvoices } from '../../../src/hooks/useInvoices';
 import { InvoiceStatusBadge } from '../../../src/components/InvoiceStatusBadge';
 import { INVOICE_ENDPOINTS } from '../../../src/constants/api';
 import { downloadAndShare } from '../../../src/utils/downloads';
-import { LoadingScreen, SkeletonList } from '../../../src/components/Loading';
+import { LoadingScreen, Shimmer } from '../../../src/components/Loading';
 import type { Company } from '../../../src/types/company.types';
 import type { InvoiceListItem, InvoiceStatus } from '../../../src/types/invoice.types';
 
@@ -47,6 +52,109 @@ function formatMoney(amount: string, currency: string): string {
   }
 }
 
+// ── Animated count-up number ───────────────────────────────────────────────────
+function AnimatedNumber({
+  value,
+  format,
+  style,
+  duration = 800,
+}: {
+  value: number;
+  format: (n: number) => string;
+  style?: any;
+  duration?: number;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const prev = useRef(0);
+  const [display, setDisplay] = useState(() => format(0));
+
+  useEffect(() => {
+    const from = prev.current;
+    const to = value;
+    anim.setValue(0);
+    const id = anim.addListener(({ value: t }) => {
+      setDisplay(format(from + (to - from) * t));
+    });
+    Animated.timing(anim, {
+      toValue: 1,
+      duration,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start(() => {
+      prev.current = to;
+      setDisplay(format(to));
+    });
+    return () => anim.removeListener(id);
+  }, [value]);
+
+  return <Text style={style}>{display}</Text>;
+}
+
+// ── Custom animated refresh indicator ───────────────────────────────────────────
+function RefreshSpinner({ visible }: { visible: boolean }) {
+  const spin = useRef(new Animated.Value(0)).current;
+  const height = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(height, {
+      toValue: visible ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: false,
+    }).start();
+
+    if (!visible) return;
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 800,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    spin.setValue(0);
+    loop.start();
+    return () => loop.stop();
+  }, [visible]);
+
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const maxH = height.interpolate({ inputRange: [0, 1], outputRange: [0, 38] });
+
+  return (
+    <Animated.View style={[styles.refreshBar, { height: maxH, opacity: height }]}>
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <Feather name="loader" size={15} color={NAVY} />
+      </Animated.View>
+      <Text style={styles.refreshText}>Refreshing…</Text>
+    </Animated.View>
+  );
+}
+
+// ── Shimmer skeleton list matching the invoice-row shape ────────────────────────
+function InvoiceSkeletonList({ count = 6 }: { count?: number }) {
+  return (
+    <View style={styles.listContent}>
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={styles.row}>
+          <View style={styles.rowTop}>
+            <Shimmer width="45%" height={16} />
+            <Shimmer width={80} height={16} />
+          </View>
+          <Shimmer width="60%" height={12} style={{ marginTop: 10 }} />
+          <View style={[styles.rowBottom, { marginTop: 12 }]}>
+            <Shimmer width="35%" height={12} />
+            <Shimmer width={72} height={22} radius={999} />
+          </View>
+          <View style={styles.rowActions}>
+            <Shimmer width={58} height={28} radius={8} />
+            <Shimmer width={58} height={28} radius={8} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 export default function InvoicesScreen() {
   const router = useRouter();
   const { data: companies, isLoading: companiesLoading } = useCompanies();
@@ -68,6 +176,7 @@ export default function InvoicesScreen() {
     isError,
     refetch,
     isFetching,
+    isRefetching,
   } = useInvoices({
     company_id: companyId,
     status: status || undefined,
@@ -78,6 +187,15 @@ export default function InvoicesScreen() {
   const invoices = data?.results ?? [];
   const totalCount = data?.pagination?.count ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  // Sum of the amounts currently on screen (for the animated metrics strip).
+  const pageTotal = invoices.reduce((sum, inv) => sum + Number(inv.total_amount ?? 0), 0);
+  const pageCurrency = invoices[0]?.currency ?? 'AED';
+
+  const onRefresh = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    refetch();
+  };
 
   // ── No companies at all ────────────────────────────────────────────────────
   if (companiesLoading) {
@@ -111,26 +229,55 @@ export default function InvoicesScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Invoices</Text>
           {totalCount > 0 && (
-            <Text style={styles.subtitle}>{totalCount} total</Text>
+            <AnimatedNumber
+              value={totalCount}
+              format={(n) => `${Math.round(n)} total`}
+              style={styles.subtitle}
+            />
           )}
         </View>
         <TouchableOpacity
           style={styles.catalogBtn}
-          onPress={() =>
-            router.push({ pathname: '/invoices/products', params: { companyId } } as any)
-          }
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            router.push({ pathname: '/invoices/products', params: { companyId } } as any);
+          }}
         >
           <Feather name="package" size={18} color={NAVY} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.createBtn}
-          onPress={() =>
-            router.push({ pathname: '/invoices/create', params: { companyId } } as any)
-          }
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+            router.push({ pathname: '/invoices/create', params: { companyId } } as any);
+          }}
         >
           <Text style={styles.createBtnText}>+ Create</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Animated metrics strip — value of the invoices currently shown */}
+      {!isLoading && invoices.length > 0 && (
+        <View style={styles.metricsStrip}>
+          <View style={styles.metricItem}>
+            <Feather name="layers" size={13} color={SLATE} />
+            <AnimatedNumber
+              value={invoices.length}
+              format={(n) => `${Math.round(n)} shown`}
+              style={styles.metricText}
+            />
+          </View>
+          <View style={styles.metricDivider} />
+          <View style={styles.metricItem}>
+            <Feather name="dollar-sign" size={13} color={SLATE} />
+            <AnimatedNumber
+              value={pageTotal}
+              format={(n) => formatMoney(String(n), pageCurrency)}
+              style={styles.metricTextStrong}
+            />
+          </View>
+        </View>
+      )}
 
       {/* Company selector — only when more than one company */}
       {companies.length > 1 ? (
@@ -147,6 +294,7 @@ export default function InvoicesScreen() {
                 key={c.id}
                 style={[styles.companyChip, active && styles.companyChipActive]}
                 onPress={() => {
+                  Haptics.selectionAsync().catch(() => {});
                   setCompanyId(c.id);
                   setPage(1);
                 }}
@@ -176,6 +324,7 @@ export default function InvoicesScreen() {
               key={s.value || 'all'}
               style={[styles.filterChip, active && styles.filterChipActive]}
               onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
                 setStatus(s.value);
                 setPage(1);
               }}
@@ -193,6 +342,7 @@ export default function InvoicesScreen() {
         <TouchableOpacity
           style={styles.toolBtn}
           onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
             const url =
               `${INVOICE_ENDPOINTS.export}?company_id=${companyId}` +
               (status ? `&status=${status}` : '');
@@ -204,18 +354,22 @@ export default function InvoicesScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.toolBtn}
-          onPress={() =>
-            router.push({ pathname: '/invoices/gap-report', params: { companyId } } as any)
-          }
+          onPress={() => {
+            Haptics.selectionAsync().catch(() => {});
+            router.push({ pathname: '/invoices/gap-report', params: { companyId } } as any);
+          }}
         >
           <Feather name="shield" size={15} color={NAVY} />
           <Text style={styles.toolBtnText}>Gap Report</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Custom animated refresh indicator */}
+      <RefreshSpinner visible={isRefetching} />
+
       {/* List */}
       {isLoading ? (
-        <SkeletonList count={6} />
+        <InvoiceSkeletonList count={6} />
       ) : isError ? (
         <View style={styles.centerFlex}>
           <Text style={styles.emoji}>⚠️</Text>
@@ -237,12 +391,19 @@ export default function InvoicesScreen() {
           data={invoices}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          refreshing={isFetching}
-          onRefresh={refetch}
+          refreshControl={
+            <RefreshControl
+              refreshing={isFetching}
+              onRefresh={onRefresh}
+              tintColor={NAVY}
+              colors={[NAVY]}
+              progressBackgroundColor="#fff"
+            />
+          }
           renderItem={({ item }) => (
             <InvoiceRow
               invoice={item}
-              onPress={() => router.push(`/invoices/${item.id}` as any)}
+              onOpen={() => router.push(`/invoices/${item.id}` as any)}
             />
           )}
           ListFooterComponent={
@@ -255,14 +416,20 @@ export default function InvoicesScreen() {
                   <TouchableOpacity
                     style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
                     disabled={page <= 1}
-                    onPress={() => setPage((p) => p - 1)}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setPage((p) => p - 1);
+                    }}
                   >
                     <Text style={styles.pageBtnText}>Previous</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.pageBtn, page >= totalPages && styles.pageBtnDisabled]}
                     disabled={page >= totalPages}
-                    onPress={() => setPage((p) => p + 1)}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setPage((p) => p + 1);
+                    }}
                   >
                     <Text style={styles.pageBtnText}>Next</Text>
                   </TouchableOpacity>
@@ -278,70 +445,144 @@ export default function InvoicesScreen() {
 
 function InvoiceRow({
   invoice,
-  onPress,
+  onOpen,
 }: {
   invoice: InvoiceListItem;
-  onPress: () => void;
+  onOpen: () => void;
 }) {
-  return (
-    <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
-      <View style={styles.rowTop}>
-        <Text style={styles.invoiceNumber}>{invoice.invoice_number}</Text>
-        <Text style={styles.amount}>
-          {formatMoney(invoice.total_amount, invoice.currency)}
-        </Text>
+  const swipeRef = useRef<Swipeable>(null);
+
+  const copyNumber = async () => {
+    await Clipboard.setStringAsync(invoice.invoice_number);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    swipeRef.current?.close();
+  };
+
+  const downloadPdf = () => {
+    Haptics.selectionAsync().catch(() => {});
+    swipeRef.current?.close();
+    downloadAndShare(
+      INVOICE_ENDPOINTS.downloadPdf(invoice.id),
+      `${invoice.invoice_number}.pdf`,
+      'application/pdf'
+    );
+  };
+
+  const renderRightActions = (
+    _progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-210, -105, 0],
+      outputRange: [1, 0.9, 0.6],
+      extrapolate: 'clamp',
+    });
+    return (
+      <View style={styles.swipeActions}>
+        <Animated.View style={{ transform: [{ scale }], flexDirection: 'row' }}>
+          <TouchableOpacity
+            style={[styles.swipeBtn, { backgroundColor: '#2563eb' }]}
+            onPress={() => {
+              Haptics.selectionAsync().catch(() => {});
+              swipeRef.current?.close();
+              onOpen();
+            }}
+            activeOpacity={0.85}
+          >
+            <Feather name="eye" size={16} color="#fff" />
+            <Text style={styles.swipeBtnText}>Open</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.swipeBtn, { backgroundColor: '#0d9488' }]}
+            onPress={downloadPdf}
+            activeOpacity={0.85}
+          >
+            <Feather name="file-text" size={16} color="#fff" />
+            <Text style={styles.swipeBtnText}>PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.swipeBtn, { backgroundColor: NAVY }]}
+            onPress={copyNumber}
+            activeOpacity={0.85}
+          >
+            <Feather name="copy" size={16} color="#fff" />
+            <Text style={styles.swipeBtnText}>Copy #</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </View>
+    );
+  };
 
-      <Text style={styles.customer}>{invoice.customer_name}</Text>
-
-      <View style={styles.rowBottom}>
-        <View style={styles.metaLeft}>
-          <Text style={styles.meta}>{invoice.type_display}</Text>
-          <Text style={styles.metaDot}>•</Text>
-          <Text style={styles.meta}>{invoice.issue_date}</Text>
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      friction={2}
+      rightThreshold={40}
+      onSwipeableWillOpen={() => Haptics.selectionAsync().catch(() => {})}
+      containerStyle={styles.swipeContainer}
+    >
+      <TouchableOpacity
+        style={styles.row}
+        onPress={() => {
+          Haptics.selectionAsync().catch(() => {});
+          onOpen();
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.rowTop}>
+          <Text style={styles.invoiceNumber}>{invoice.invoice_number}</Text>
+          <AnimatedNumber
+            value={Number(invoice.total_amount ?? 0)}
+            format={(n) => formatMoney(String(n), invoice.currency)}
+            style={styles.amount}
+          />
         </View>
-        <View style={styles.badgeCol}>
-          <InvoiceStatusBadge status={invoice.status} label={invoice.status_display} />
-          {invoice.buyer_viewed_at && (
-            <View style={styles.viewedPill}>
-              <Feather name="eye" size={11} color="#0d9488" />
-              <Text style={styles.viewedPillText}>Buyer Viewed</Text>
-            </View>
+
+        <Text style={styles.customer}>{invoice.customer_name}</Text>
+
+        <View style={styles.rowBottom}>
+          <View style={styles.metaLeft}>
+            <Text style={styles.meta}>{invoice.type_display}</Text>
+            <Text style={styles.metaDot}>•</Text>
+            <Text style={styles.meta}>{invoice.issue_date}</Text>
+          </View>
+          <View style={styles.badgeCol}>
+            <InvoiceStatusBadge status={invoice.status} label={invoice.status_display} />
+            {invoice.buyer_viewed_at && (
+              <View style={styles.viewedPill}>
+                <Feather name="eye" size={11} color="#0d9488" />
+                <Text style={styles.viewedPillText}>Buyer Viewed</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.rowActions}>
+          <TouchableOpacity style={styles.iconBtn} onPress={downloadPdf}>
+            <Feather name="file-text" size={14} color={SLATE} />
+            <Text style={styles.iconBtnText}>PDF</Text>
+          </TouchableOpacity>
+          {invoice.has_xml && (
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() => {
+                Haptics.selectionAsync().catch(() => {});
+                downloadAndShare(
+                  INVOICE_ENDPOINTS.downloadXml(invoice.id),
+                  `${invoice.invoice_number}.xml`,
+                  'application/xml'
+                );
+              }}
+            >
+              <Feather name="download" size={14} color={SLATE} />
+              <Text style={styles.iconBtnText}>XML</Text>
+            </TouchableOpacity>
           )}
         </View>
-      </View>
-
-      <View style={styles.rowActions}>
-        <TouchableOpacity
-          style={styles.iconBtn}
-          onPress={() =>
-            downloadAndShare(
-              INVOICE_ENDPOINTS.downloadPdf(invoice.id),
-              `${invoice.invoice_number}.pdf`,
-              'application/pdf'
-            )
-          }
-        >
-          <Feather name="file-text" size={14} color={SLATE} />
-          <Text style={styles.iconBtnText}>PDF</Text>
-        </TouchableOpacity>
-        {invoice.has_xml && (
-          <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={() =>
-              downloadAndShare(
-                INVOICE_ENDPOINTS.downloadXml(invoice.id),
-                `${invoice.invoice_number}.xml`,
-                'application/xml'
-              )
-            }
-          >
-            <Feather name="download" size={14} color={SLATE} />
-            <Text style={styles.iconBtnText}>XML</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Swipeable>
   );
 }
 
@@ -369,8 +610,28 @@ const styles = StyleSheet.create({
   },
   createBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
-  chipsScroll: { flexGrow: 0 },
-  chipsRow: { paddingHorizontal: 16, paddingVertical: 6, gap: 8, alignItems: 'center' },
+  chipsScroll: { flexGrow: 0, height: 48 },
+  chipsRow: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
+
+  // Animated metrics strip
+  metricsStrip: {
+    flexDirection: 'row', alignItems: 'center',
+    marginHorizontal: 16, marginTop: 4, marginBottom: 2,
+    paddingVertical: 9, paddingHorizontal: 14,
+    backgroundColor: '#fff', borderRadius: 12,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  metricItem: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  metricDivider: { width: 1, height: 20, backgroundColor: '#eef2f7' },
+  metricText: { fontSize: 12.5, color: SLATE, fontWeight: '600' },
+  metricTextStrong: { fontSize: 13.5, color: NAVY, fontWeight: '800' },
+
+  // Custom refresh indicator
+  refreshBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, overflow: 'hidden',
+  },
+  refreshText: { fontSize: 12, fontWeight: '700', color: NAVY, letterSpacing: 0.2 },
 
   toolbar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
   toolBtn: {
@@ -399,8 +660,16 @@ const styles = StyleSheet.create({
 
   listContent: { padding: 16, paddingTop: 8 },
 
+  swipeContainer: { marginBottom: 10, borderRadius: 14, overflow: 'hidden' },
+  swipeActions: { flexDirection: 'row', alignItems: 'stretch' },
+  swipeBtn: {
+    width: 66, alignItems: 'center', justifyContent: 'center', gap: 4,
+    alignSelf: 'stretch',
+  },
+  swipeBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+
   row: {
-    backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: BORDER,
   },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

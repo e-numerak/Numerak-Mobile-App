@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -20,10 +20,12 @@ import {
   useDeleteCustomer,
 } from '../../../../../../src/hooks/useCustomers';
 import { API_BASE_URL } from '../../../../../../src/constants/api';
+import { Shimmer } from '../../../../../../src/components/Loading';
 import type { CustomerType, UpdateCustomerPayload } from '../../../../../../src/types/customer.types';
 
 const NAVY = '#1e3a5f';
 const SLATE = '#64748b';
+const MUTED = '#94a3b8';
 const BORDER = '#e2e8f0';
 const BG = '#f6f8fb';
 const ERROR = '#dc2626';
@@ -169,21 +171,25 @@ export default function CustomerDetailScreen() {
 
   if (isLoading) {
     return (
-      <View style={styles.centerScreen}>
-        <ActivityIndicator size="large" color={NAVY} />
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Customer', headerBackTitle: 'Back' }} />
+        <CustomerDetailSkeleton />
+      </>
     );
   }
 
   if (isError || !customer) {
     return (
-      <View style={styles.centerScreen}>
-        <Feather name="alert-triangle" size={44} color={ERROR} style={{ marginBottom: 14 }} />
-        <Text style={styles.errorTitle}>Couldn't load this customer</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
-          <Text style={styles.retryButtonText}>Try again</Text>
-        </TouchableOpacity>
-      </View>
+      <>
+        <Stack.Screen options={{ title: 'Customer' }} />
+        <View style={styles.centerScreen}>
+          <Feather name="alert-triangle" size={44} color={ERROR} style={{ marginBottom: 14 }} />
+          <Text style={styles.errorTitle}>Couldn't load this customer</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+            <Text style={styles.retryButtonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      </>
     );
   }
 
@@ -227,21 +233,18 @@ export default function CustomerDetailScreen() {
 
         {/* ── Completeness progress ── */}
         {!isEditing && (
-          <View
-            style={[
-              styles.completenessCard,
-              { backgroundColor: `${completionColor}10`, borderColor: `${completionColor}33` },
-            ]}
-          >
+          <View style={styles.completenessCard}>
             <View style={styles.completenessTop}>
               <View style={styles.completenessTitleRow}>
-                <Feather
-                  name={customer.is_complete ? 'check-circle' : 'alert-circle'}
-                  size={16}
-                  color={completionColor}
-                />
-                <Text style={[styles.completenessTitle, { color: completionColor }]}>
-                  {customer.is_complete ? 'Profile complete — ready to invoice' : 'Profile incomplete'}
+                <View style={[styles.completenessIcon, { backgroundColor: `${completionColor}18` }]}>
+                  <Feather
+                    name={customer.is_complete ? 'check' : 'alert-circle'}
+                    size={14}
+                    color={completionColor}
+                  />
+                </View>
+                <Text style={styles.completenessTitle}>
+                  {customer.is_complete ? 'Profile complete' : 'Profile incomplete'}
                 </Text>
               </View>
               <Text style={[styles.completenessPercent, { color: completionColor }]}>
@@ -256,11 +259,13 @@ export default function CustomerDetailScreen() {
                 ]}
               />
             </View>
-            {!customer.is_complete && customer.missing_fields?.length > 0 && (
-              <Text style={styles.completenessLabel}>
-                Missing: {customer.missing_fields.join(', ')}
-              </Text>
-            )}
+            <Text style={styles.completenessSub}>
+              {customer.is_complete
+                ? 'Ready to invoice'
+                : customer.missing_fields?.length > 0
+                ? `Missing: ${customer.missing_fields.join(', ')}`
+                : 'Some details are still required'}
+            </Text>
           </View>
         )}
 
@@ -286,19 +291,80 @@ export default function CustomerDetailScreen() {
 // ───────────────────────────────────────────
 // View mode
 // ───────────────────────────────────────────
+// ───────────────────────────────────────────
+// Loading skeleton — mirrors the detail layout
+// ───────────────────────────────────────────
+function CustomerDetailSkeleton() {
+  return (
+    <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      {/* Hero placeholder */}
+      <View style={styles.heroSkeleton}>
+        <Shimmer width={54} height={54} radius={14} base="#e6eaf0" highlight="#f3f6fa" />
+        <View style={{ flex: 1, marginLeft: 14, gap: 10 }}>
+          <Shimmer width="55%" height={20} radius={7} base="#e6eaf0" highlight="#f3f6fa" />
+          <Shimmer width="30%" height={13} radius={6} base="#e6eaf0" highlight="#f3f6fa" />
+        </View>
+      </View>
+
+      {/* Completeness placeholder */}
+      <View style={styles.completenessSkeleton}>
+        <Shimmer width="50%" height={15} />
+        <Shimmer width="100%" height={7} radius={999} style={{ marginTop: 14 }} />
+      </View>
+
+      {/* Section placeholders */}
+      {[0, 1].map((s) => (
+        <View key={s} style={styles.section}>
+          <Shimmer width={90} height={11} radius={5} style={{ marginBottom: 8, marginLeft: 4 }} />
+          <View style={styles.sectionCard}>
+            {[0, 1, 2].map((r) => (
+              <View key={r} style={[styles.detailRow, r < 2 && styles.detailRowDivider]}>
+                <Shimmer width="30%" height={13} />
+                <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                  <Shimmer width="45%" height={13} />
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+// Strip a leading pictographic emoji (e.g. "🏠 No 5 …") so we can show a clean
+// icon instead. Wrapped in try/catch in case the JS engine lacks the u-flag.
+function stripLeadingEmoji(v?: string | null): string {
+  if (!v) return '';
+  try {
+    return (
+      v.replace(
+        /^[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}️‍\s]+/u,
+        ''
+      ).trim() || v
+    );
+  } catch {
+    return v;
+  }
+}
+
+type Row = { label: string; value?: string | null; icon?: keyof typeof Feather.glyphMap };
+
 function ViewFields({ customer }: { customer: any }) {
-  const rows = [
+  const taxRows: Row[] = [
     { label: 'Legal name', value: customer.legal_name },
     { label: 'TRN', value: customer.trn },
     { label: 'TRN issued', value: customer.trn_issue_date },
     { label: 'TRN expiry', value: customer.trn_expiry_date },
     { label: 'VAT number', value: customer.vat_number },
     { label: 'PEPPOL endpoint', value: customer.peppol_endpoint },
-    { label: 'Address', value: customer.formatted_address },
-    { label: 'Email', value: customer.email },
-    { label: 'Phone', value: customer.phone },
-    { label: 'Notes', value: customer.notes },
   ];
+  const contactRows: Row[] = [
+    { label: 'Address', value: stripLeadingEmoji(customer.formatted_address), icon: 'map-pin' },
+    { label: 'Email', value: customer.email, icon: 'mail' },
+    { label: 'Phone', value: customer.phone, icon: 'phone' },
+  ];
+  const notesRows: Row[] = [{ label: 'Notes', value: customer.notes, icon: 'file-text' }];
 
   // Media URLs may come back relative (e.g. "/media/...") — make them absolute
   // before handing off to the OS, otherwise the link silently does nothing.
@@ -321,32 +387,66 @@ function ViewFields({ customer }: { customer: any }) {
 
   return (
     <>
-      <View style={styles.card}>
-        {rows.map((row) => (
-          <View key={row.label} style={styles.viewRow}>
-            <Text style={styles.viewLabel}>{row.label}</Text>
-            <Text style={styles.viewValue}>{row.value || '—'}</Text>
-          </View>
+      <Section title="Business & Tax">
+        {taxRows.map((row, i) => (
+          <DetailRow key={row.label} row={row} isLast={i === taxRows.length - 1} />
         ))}
-      </View>
+      </Section>
+
+      <Section title="Contact">
+        {contactRows.map((row, i) => (
+          <DetailRow key={row.label} row={row} isLast={i === contactRows.length - 1} />
+        ))}
+      </Section>
+
+      <Section title="Additional">
+        {notesRows.map((row, i) => (
+          <DetailRow key={row.label} row={row} isLast={i === notesRows.length - 1} />
+        ))}
+      </Section>
 
       {(customer.trn_document || customer.logo) && (
         <View style={styles.docsRow}>
           {customer.trn_document && (
-            <TouchableOpacity style={styles.docLink} onPress={() => openUrl(customer.trn_document)}>
-              <Feather name="external-link" size={15} color="#2563eb" />
+            <TouchableOpacity style={styles.docLink} onPress={() => openUrl(customer.trn_document)} activeOpacity={0.8}>
+              <Feather name="file-text" size={16} color="#2563eb" />
               <Text style={styles.docLinkText}>View TRN document</Text>
+              <Feather name="download" size={14} color="#2563eb" />
             </TouchableOpacity>
           )}
           {customer.logo && (
-            <TouchableOpacity style={styles.docLink} onPress={() => openUrl(customer.logo)}>
-              <Feather name="external-link" size={15} color="#2563eb" />
+            <TouchableOpacity style={styles.docLink} onPress={() => openUrl(customer.logo)} activeOpacity={0.8}>
+              <Feather name="image" size={16} color="#2563eb" />
               <Text style={styles.docLinkText}>View logo</Text>
+              <Feather name="download" size={14} color="#2563eb" />
             </TouchableOpacity>
           )}
         </View>
       )}
     </>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionCard}>{children}</View>
+    </View>
+  );
+}
+
+function DetailRow({ row, isLast }: { row: Row; isLast: boolean }) {
+  return (
+    <View style={[styles.detailRow, !isLast && styles.detailRowDivider]}>
+      {row.icon && (
+        <View style={styles.detailIcon}>
+          <Feather name={row.icon} size={14} color={SLATE} />
+        </View>
+      )}
+      <Text style={styles.detailLabel}>{row.label}</Text>
+      <Text style={styles.detailValue}>{row.value || '—'}</Text>
+    </View>
   );
 }
 
@@ -431,6 +531,17 @@ const styles = StyleSheet.create({
     shadowColor: '#1e3a5f', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2, shadowRadius: 14, elevation: 5,
   },
+
+  // Loading skeleton
+  heroSkeleton: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 20, padding: 18, marginBottom: 14,
+    borderWidth: 1, borderColor: BORDER,
+  },
+  completenessSkeleton: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: BORDER,
+  },
   heroRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   heroLogo: { width: 54, height: 54, borderRadius: 14, backgroundColor: '#fff' },
   heroAvatar: {
@@ -444,30 +555,50 @@ const styles = StyleSheet.create({
   inactiveBadgeText: { fontSize: 10, fontWeight: '800', color: '#fca5a5', letterSpacing: 0.5 },
 
   completenessCard: {
-    borderRadius: 14, padding: 14, marginBottom: 16, borderWidth: 1,
+    backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: BORDER,
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
   completenessTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  completenessTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 },
-  completenessTitle: { fontSize: 14, fontWeight: '700' },
+  completenessTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
+  completenessIcon: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  completenessTitle: { fontSize: 14.5, fontWeight: '700', color: NAVY },
   completenessPercent: { fontSize: 15, fontWeight: '800' },
-  completenessLabel: { fontSize: 12, color: SLATE, marginTop: 8 },
+  completenessSub: { fontSize: 12, color: SLATE, marginTop: 9 },
   progressTrack: {
-    height: 8, borderRadius: 999, backgroundColor: 'rgba(15,23,42,0.08)', marginTop: 10, overflow: 'hidden',
+    height: 7, borderRadius: 999, backgroundColor: '#eef2f7', marginTop: 12, overflow: 'hidden',
   },
-  progressFill: { height: 8, borderRadius: 999 },
+  progressFill: { height: 7, borderRadius: 999 },
 
   card: { backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 16, paddingVertical: 4, marginBottom: 14, borderWidth: 1, borderColor: BORDER },
 
-  viewRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', gap: 16,
+  // Grouped detail sections
+  section: { marginBottom: 16 },
+  sectionTitle: {
+    fontSize: 11, fontWeight: '800', color: MUTED, letterSpacing: 1,
+    textTransform: 'uppercase', marginBottom: 8, marginLeft: 4,
   },
-  viewLabel: { fontSize: 14, color: SLATE },
-  viewValue: { fontSize: 14, color: '#0f172a', fontWeight: '600', flex: 1, textAlign: 'right' },
+  sectionCard: {
+    backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 16,
+    borderWidth: 1, borderColor: BORDER,
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
+  },
+  detailRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 10 },
+  detailRowDivider: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  detailIcon: {
+    width: 28, height: 28, borderRadius: 8, backgroundColor: '#f4f7fb',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  detailLabel: { fontSize: 13.5, color: MUTED, fontWeight: '500' },
+  detailValue: { fontSize: 14, color: NAVY, fontWeight: '700', flex: 1, textAlign: 'right' },
 
-  docsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 18, marginBottom: 16, paddingHorizontal: 4 },
-  docLink: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  docLinkText: { fontSize: 14, color: '#2563eb', fontWeight: '700' },
+  docsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16, marginTop: 2 },
+  docLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#f2f6ff', borderWidth: 1, borderColor: '#dbe6fb',
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 11,
+  },
+  docLinkText: { fontSize: 13.5, color: '#2563eb', fontWeight: '700' },
 
   fieldWrap: { marginBottom: 16 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: NAVY, marginBottom: 6 },

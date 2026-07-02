@@ -1,6 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Dimensions, ScrollView, Animated, Easing } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  ActivityIndicator, Dimensions, Animated, Easing,
+  Platform, StatusBar,
+} from 'react-native';
+import {
+  GestureHandlerRootView,
+  ScrollView,
+  TouchableOpacity as GHTouchableOpacity,
+} from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -10,29 +18,115 @@ import { useRouter, usePathname } from 'expo-router';
 import { useIsFetching } from '@tanstack/react-query';
 import { useAuthStore } from '../../src/store/authStore';
 
-const NAVY = '#1e3a5f';
-const SLATE = '#64748b';
+// ── Brand tokens ──────────────────────────────────────────────────────────────
+const COLORS = {
+  primary: '#1a2332',
+  primaryDark: '#0d141e',
+  primaryLight: '#2a3649',
+  accent: '#5b7cfa',
+  accentLight: '#8ba3fc',
+  accentDark: '#3a5ad6',
+  success: '#2d9b6e',
+  warning: '#e8a838',
+  error: '#d45a5a',
+  surface: '#f5f6fa',
+  card: '#ffffff',
+  text: '#1a2332',
+  textSecondary: '#5a6b7c',
+  textMuted: '#8a9baa',
+  border: '#e8ecf0',
+  borderLight: '#f0f2f5',
+  shadow: 'rgba(26, 35, 50, 0.08)',
+};
 
-type MenuItem = { label: string; route: string; icon: keyof typeof Feather.glyphMap };
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 14,
+  lg: 20,
+  xl: 28,
+  xxl: 36,
+};
+
+// Modern font family configuration
+const FONTS = {
+  regular: Platform.OS === 'ios' ? 'SF Pro Text' : 'sans-serif',
+  medium: Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-medium',
+  semibold: Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-medium',
+  bold: Platform.OS === 'ios' ? 'SF Pro Display' : 'sans-serif-condensed',
+};
+
+const TYPOGRAPHY = {
+  h1: { 
+    fontSize: 26, 
+    fontWeight: '800' as const, 
+    lineHeight: 34,
+    fontFamily: FONTS.bold,
+    letterSpacing: -0.5,
+  },
+  h2: { 
+    fontSize: 18, 
+    fontWeight: '700' as const, 
+    lineHeight: 24,
+    fontFamily: FONTS.semibold,
+    letterSpacing: -0.3,
+  },
+  h3: { 
+    fontSize: 15, 
+    fontWeight: '600' as const, 
+    lineHeight: 20,
+    fontFamily: FONTS.medium,
+    letterSpacing: -0.2,
+  },
+  body: { 
+    fontSize: 14, 
+    fontWeight: '500' as const, 
+    lineHeight: 20,
+    fontFamily: FONTS.regular,
+  },
+  bodySmall: { 
+    fontSize: 12, 
+    fontWeight: '500' as const, 
+    lineHeight: 16,
+    fontFamily: FONTS.regular,
+  },
+  caption: { 
+    fontSize: 10, 
+    fontWeight: '600' as const, 
+    lineHeight: 14,
+    fontFamily: FONTS.medium,
+    letterSpacing: 0.3,
+  },
+  overline: { 
+    fontSize: 9, 
+    fontWeight: '700' as const, 
+    lineHeight: 12, 
+    letterSpacing: 1.8,
+    fontFamily: FONTS.semibold,
+    textTransform: 'uppercase' as const,
+  },
+};
+
+type MenuItem = { 
+  label: string; 
+  route: string; 
+  icon: keyof typeof Feather.glyphMap;
+  badge?: number;
+};
 
 const MENU_ITEMS: MenuItem[] = [
   { label: 'Dashboard', route: '/dashboard', icon: 'grid' },
   { label: 'Companies', route: '/companies', icon: 'briefcase' },
   { label: 'Customers', route: '/customers', icon: 'users' },
-  { label: 'Invoices', route: '/invoices', icon: 'file-text' },
+  { label: 'Invoices', route: '/invoices', icon: 'file-text'},
   { label: 'Product Catalog', route: '/invoices/products', icon: 'package' },
   { label: 'Receivables', route: '/receivables', icon: 'dollar-sign' },
   { label: 'Reports', route: '/reports', icon: 'bar-chart-2' },
   { label: 'Settings', route: '/settings/profile', icon: 'settings' },
 ];
 
-// Top-level sidebar routes always show the hamburger (to open the menu).
-// Any deeper screen shows a back arrow so navigation feels step-by-step.
 const TOP_LEVEL_ROUTES = MENU_ITEMS.map((m) => m.route);
 
-// One path segment up — e.g. /companies/123/customers/456 -> /companies/123/customers.
-// This gives deterministic, breadcrumb-style back navigation regardless of how
-// the drawer navigator tracks its own history.
 function parentPath(pathname: string): string | null {
   const parts = pathname.split('/').filter(Boolean);
   if (parts.length <= 1) return null;
@@ -40,56 +134,52 @@ function parentPath(pathname: string): string | null {
   return '/' + parts.join('/');
 }
 
-// Header-left that adapts per screen: hamburger on the sidebar's own screens,
-// otherwise a back arrow (deep/detail screens) that steps up ONE level at a time.
 function SmartHeaderLeft() {
   const router = useRouter();
   const pathname = usePathname();
-  const isTopLevel = TOP_LEVEL_ROUTES.includes(pathname);
+  const isTop = TOP_LEVEL_ROUTES.includes(pathname);
 
-  if (isTopLevel) {
-    return <DrawerToggleButton tintColor="#fff" />;
+  if (isTop) {
+    return (
+      <View style={{ marginLeft: 6 }}>
+        <DrawerToggleButton tintColor="#fff" />
+      </View>
+    );
   }
-
-  const stepBack = () => {
-    const parent = parentPath(pathname);
-    router.navigate((parent ?? '/dashboard') as any);
-  };
 
   return (
     <TouchableOpacity
-      onPress={stepBack}
-      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      style={{ paddingLeft: 12, paddingRight: 6 }}
+      onPress={() => {
+        const parent = parentPath(pathname);
+        router.navigate((parent ?? '/dashboard') as any);
+      }}
+      hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
+      style={{ paddingLeft: 14, paddingRight: 6 }}
     >
-      <Feather name="chevron-left" size={26} color="#fff" />
+      <Feather name="chevron-left" size={22} color="#fff" />
     </TouchableOpacity>
   );
 }
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
-// Responsive drawer width: 80% of screen on small phones, capped at 320px on tablets
-const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 330);
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const DRAWER_WIDTH = Math.min(SCREEN_WIDTH * 0.82, 320);
+const BAR_W = SCREEN_WIDTH * 0.35;
 
-const BAR_WIDTH = SCREEN_WIDTH * 0.35;
-
-// A slim indeterminate progress bar that appears at the very top whenever ANY
-// React Query request is in flight — so every navigation/data load shows a
-// smooth, professional loading indicator instead of a blank screen.
+// ── Global loading bar ────────────────────────────────────────────────────────
 function GlobalLoadingBar() {
   const fetching = useIsFetching();
   const insets = useSafeAreaInsets();
-  const slide = useRef(new Animated.Value(-BAR_WIDTH)).current;
+  const slide = useRef(new Animated.Value(-BAR_W)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (fetching > 0) {
       opacity.setValue(1);
-      slide.setValue(-BAR_WIDTH);
+      slide.setValue(-BAR_W);
       const loop = Animated.loop(
         Animated.timing(slide, {
           toValue: SCREEN_WIDTH,
-          duration: 850,
+          duration: 1000,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         })
@@ -97,15 +187,34 @@ function GlobalLoadingBar() {
       loop.start();
       return () => loop.stop();
     }
-    Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }).start();
-  }, [fetching, slide, opacity]);
+    Animated.timing(opacity, { 
+      toValue: 0, 
+      duration: 250, 
+      useNativeDriver: true 
+    }).start();
+  }, [fetching]);
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.barTrack, { top: insets.top, opacity }]}>
+    <Animated.View 
+      pointerEvents="none" 
+      style={[
+        styles.barTrack, 
+        { 
+          top: insets.top + (Platform.OS === 'ios' ? 0 : 0), 
+          opacity 
+        }
+      ]}
+    >
       <Animated.View style={[styles.barFill, { transform: [{ translateX: slide }] }]}>
         <LinearGradient
-          colors={['#60a5fa00', '#60a5fa', '#93c5fd', '#60a5fa00']}
-          start={{ x: 0, y: 0 }}
+          colors={[
+            'rgba(91, 124, 250, 0)',
+            COLORS.accent,
+            COLORS.accentLight,
+            COLORS.accent,
+            'rgba(91, 124, 250, 0)'
+          ]}
+          start={{ x: 0, y: 0 }} 
           end={{ x: 1, y: 0 }}
           style={StyleSheet.absoluteFill}
         />
@@ -114,6 +223,7 @@ function GlobalLoadingBar() {
   );
 }
 
+// ── Drawer content ────────────────────────────────────────────────────────────
 function DrawerContent() {
   const { user, logout } = useAuthStore();
   const router = useRouter();
@@ -125,92 +235,131 @@ function DrawerContent() {
     router.replace('/login');
   };
 
-  const initials =
+  const initials = 
     `${user?.first_name?.[0] ?? ''}${user?.last_name?.[0] ?? ''}`.toUpperCase() || 'U';
 
+  const activeRoute = MENU_ITEMS
+    .filter((it) => pathname === it.route || pathname.startsWith(it.route + '/'))
+    .sort((a, b) => b.route.length - a.route.length)[0]?.route;
+
+  const userFullName = `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
+  const roleDisplay = user?.role?.replace(/_/g, ' ').toUpperCase() || 'USER';
+
   return (
-    <View style={styles.drawerContainer}>
-      {/* Gradient user header */}
+    <View style={styles.drawer}>
+      {/* ── Header ── */}
       <LinearGradient
-        colors={['#1e3a5f', '#16314f', '#0c1d30']}
-        start={{ x: 0, y: 0 }}
+        colors={[COLORS.primaryDark, COLORS.primary, COLORS.primaryLight]}
+        start={{ x: 0, y: 0 }} 
         end={{ x: 1, y: 1 }}
-        style={[styles.userSection, { paddingTop: insets.top + 22 }]}
+        style={[styles.drawerHeader, { paddingTop: insets.top + 20 }]}
       >
-        <View style={styles.brandRow}>
-          <View style={styles.brandBadge}>
-            <Text style={styles.brandBadgeText}>EN</Text>
+        {/* Brand */}
+        <View style={styles.brandSection}>
+          <View style={styles.brandLogo}>
+            <View style={styles.brandIcon}>
+              <LinearGradient
+                colors={[COLORS.accent, COLORS.accentLight]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.brandIconGradient}
+              >
+                <Text style={styles.brandIconText}>EN</Text>
+              </LinearGradient>
+            </View>
+            <View>
+              <Text style={styles.brandName}>E-Numerak</Text>
+              <Text style={styles.brandSubtitle}>PEPPOL Invoicing</Text>
+            </View>
           </View>
-          <Text style={styles.brandName}>E-Numerak</Text>
         </View>
 
-        <View style={styles.userRow}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{initials}</Text>
+        <View style={styles.divider} />
+
+        {/* User Profile */}
+        <View style={styles.userSection}>
+          <View style={styles.avatarContainer}>
+            <LinearGradient
+              colors={[COLORS.accent, COLORS.accentDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.avatar}
+            >
+              <Text style={styles.avatarText}>{initials}</Text>
+            </LinearGradient>
+            <View style={styles.statusDot} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={styles.userInfo}>
             <Text style={styles.userName} numberOfLines={1}>
-              {user?.first_name} {user?.last_name}
+              {userFullName || 'User'}
             </Text>
             <Text style={styles.userEmail} numberOfLines={1}>
-              {user?.email}
+              {user?.email || 'user@example.com'}
             </Text>
+            <View style={styles.roleBadge}>
+              <View style={styles.roleDot} />
+              <Text style={styles.roleText}>{roleDisplay}</Text>
+            </View>
           </View>
-        </View>
-
-        <View style={styles.roleBadge}>
-          <Feather name="award" size={11} color="#bfdbfe" />
-          <Text style={styles.roleText}>{user?.role?.replace(/_/g, ' ').toUpperCase()}</Text>
         </View>
       </LinearGradient>
 
-      {/* Scrollable menu */}
+      {/* ── Menu ── */}
       <ScrollView
         style={styles.menuScroll}
-        contentContainerStyle={styles.menuSection}
+        contentContainerStyle={styles.menuContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.menuHeading}>MENU</Text>
-        {(() => {
-          // Only the most specific matching route is highlighted (so /invoices/products
-          // highlights "Product Catalog", not "Invoices").
-          const activeRoute = MENU_ITEMS.filter(
-            (it) => pathname === it.route || pathname.startsWith(it.route + '/')
-          ).sort((a, b) => b.route.length - a.route.length)[0]?.route;
-          return MENU_ITEMS.map((item) => {
-            const active = item.route === activeRoute;
-            return (
-            <TouchableOpacity
+        <Text style={styles.menuHeading}>Main Navigation</Text>
+        {MENU_ITEMS.map((item) => {
+          const active = item.route === activeRoute;
+          return (
+            <GHTouchableOpacity
               key={item.route}
               style={[styles.menuItem, active && styles.menuItemActive]}
               onPress={() => router.navigate(item.route as any)}
               activeOpacity={0.7}
             >
-              {active && <View style={styles.activeAccent} />}
-              <View style={[styles.iconWrap, active && styles.iconWrapActive]}>
-                <Feather name={item.icon} size={17} color={active ? '#fff' : SLATE} />
+              <View style={[styles.menuIconBox, active && styles.menuIconBoxActive]}>
+                <Feather 
+                  name={item.icon} 
+                  size={17} 
+                  color={active ? COLORS.accent : COLORS.textSecondary} 
+                />
               </View>
-              <Text style={[styles.menuLabel, active && styles.menuLabelActive]}>{item.label}</Text>
-                {active && <Feather name="chevron-right" size={16} color={NAVY} style={{ marginLeft: 'auto' }} />}
-              </TouchableOpacity>
-            );
-          });
-        })()}
+              <Text style={[styles.menuLabel, active && styles.menuLabelActive]}>
+                {item.label}
+              </Text>
+              {item.badge && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{item.badge}</Text>
+                </View>
+              )}
+              {active && (
+                <View style={styles.activeIndicator} />
+              )}
+            </GHTouchableOpacity>
+          );
+        })}
       </ScrollView>
 
-      {/* Logout — always visible at bottom */}
-      <TouchableOpacity
-        style={[styles.logoutButton, { marginBottom: insets.bottom + 16 }]}
-        onPress={handleLogout}
-        activeOpacity={0.8}
-      >
-        <Feather name="log-out" size={17} color="#be123c" />
-        <Text style={styles.logoutText}>Logout</Text>
-      </TouchableOpacity>
+      {/* ── Footer ── */}
+      <View style={[styles.drawerFooter, { paddingBottom: insets.bottom + 12 }]}>
+        <GHTouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+        >
+          <Feather name="log-out" size={17} color={COLORS.error} />
+          <Text style={styles.logoutText}>Sign Out</Text>
+        </GHTouchableOpacity>
+        <Text style={styles.footerVersion}>v2.4.0</Text>
+      </View>
     </View>
   );
 }
 
+// ── App layout ────────────────────────────────────────────────────────────────
 export default function AppLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
@@ -218,36 +367,45 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (isLoading) return;
-    if (!isAuthenticated) {
-      router.replace('/login');
-    }
+    if (!isAuthenticated) router.replace('/login');
   }, [isAuthenticated, isLoading]);
 
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={NAVY} />
+        <ActivityIndicator size="large" color={COLORS.accent} />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
-  }
+  if (!isAuthenticated) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.primaryDark} />
       <Drawer
         drawerContent={() => <DrawerContent />}
         screenOptions={{
-          headerStyle: { backgroundColor: NAVY },
+          headerStyle: { 
+            backgroundColor: COLORS.primary,
+            elevation: 0,
+            shadowOpacity: 0,
+          },
           headerTintColor: '#fff',
-          headerTitleStyle: { fontWeight: '700' },
+          headerTitleStyle: {
+            ...TYPOGRAPHY.h2,
+            color: '#fff',
+          },
           headerLeft: () => <SmartHeaderLeft />,
-          drawerStyle: { width: DRAWER_WIDTH },
+          drawerStyle: { 
+            width: DRAWER_WIDTH,
+            backgroundColor: COLORS.surface,
+          },
           drawerType: 'front',
-          overlayColor: 'rgba(15,23,42,0.55)',
+          overlayColor: 'rgba(26, 35, 50, 0.5)',
           swipeEdgeWidth: 60,
+          
         }}
       >
         <Drawer.Screen name="dashboard" options={{ title: 'Dashboard' }} />
@@ -263,69 +421,268 @@ export default function AppLayout() {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
-  drawerContainer: { flex: 1, backgroundColor: '#fff' },
+  loadingContainer: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    backgroundColor: COLORS.surface,
+  },
+  loadingText: {
+    marginTop: 12,
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+  },
 
+  // Loading bar
   barTrack: {
-    position: 'absolute', left: 0, right: 0, height: 3, zIndex: 9999,
-    overflow: 'hidden', backgroundColor: 'transparent',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2.5,
+    zIndex: 9999,
+    overflow: 'hidden',
   },
-  barFill: { position: 'absolute', top: 0, bottom: 0, width: BAR_WIDTH },
-
-  userSection: { paddingHorizontal: 20, paddingBottom: 20 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 18 },
-  brandBadge: {
-    width: 34, height: 34, borderRadius: 9, backgroundColor: 'rgba(255,255,255,0.14)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center',
+  barFill: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: BAR_W,
   },
-  brandBadgeText: { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 0.5 },
-  brandName: { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
 
-  userRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarCircle: {
-    width: 50, height: 50, borderRadius: 25, backgroundColor: '#2563eb',
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)',
+  // Drawer shell
+  drawer: { 
+    flex: 1, 
+    backgroundColor: COLORS.surface,
   },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
-  userName: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  userEmail: { color: '#93c5fd', fontSize: 12, marginTop: 2 },
 
+  // Header
+  drawerHeader: { 
+    paddingHorizontal: SPACING.lg, 
+    paddingBottom: SPACING.xl,
+  },
+  brandSection: { 
+    marginBottom: SPACING.md,
+  },
+  brandLogo: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12,
+  },
+  brandIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  brandIconGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandIconText: { 
+    color: '#fff', 
+    fontSize: 14, 
+    fontWeight: '900', 
+    letterSpacing: 0.5,
+    fontFamily: FONTS.bold,
+  },
+  brandName: { 
+    color: '#fff', 
+    fontSize: 17, 
+    fontWeight: '800', 
+    letterSpacing: -0.3,
+    fontFamily: FONTS.bold,
+  },
+  brandSubtitle: { 
+    color: 'rgba(255,255,255,0.5)', 
+    fontSize: 9, 
+    fontWeight: '600', 
+    letterSpacing: 0.5, 
+    marginTop: 1,
+    fontFamily: FONTS.medium,
+  },
+
+  divider: { 
+    height: 1, 
+    backgroundColor: 'rgba(255,255,255,0.06)', 
+    marginBottom: SPACING.md,
+  },
+
+  userSection: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12,
+  },
+  avatarContainer: {
+    position: 'relative',
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: '900',
+    fontFamily: FONTS.bold,
+  },
+  statusDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 11,
+    height: 11,
+    borderRadius: 5.5,
+    backgroundColor: COLORS.success,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  userInfo: { 
+    flex: 1,
+    gap: 2,
+  },
+  userName: { 
+    color: '#fff', 
+    fontSize: 14, 
+    fontWeight: '700',
+    fontFamily: FONTS.semibold,
+    letterSpacing: -0.2,
+  },
+  userEmail: { 
+    color: 'rgba(255,255,255,0.4)', 
+    fontSize: 10,
+    fontFamily: FONTS.regular,
+  },
   roleBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 999, marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
-  roleText: { color: '#dbeafe', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  roleDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: COLORS.accent,
+  },
+  roleText: { 
+    color: 'rgba(255,255,255,0.5)', 
+    fontSize: 8, 
+    fontWeight: '700', 
+    letterSpacing: 0.8,
+    fontFamily: FONTS.semibold,
+  },
 
-  menuScroll: { flex: 1 },
-  menuSection: { paddingTop: 12, paddingHorizontal: 12, paddingBottom: 8 },
+  // Menu
+  menuScroll: {
+    flex: 1,
+  },
+  menuContent: { 
+    paddingTop: SPACING.sm, 
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.xs,
+  },
   menuHeading: {
-    fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 1,
-    marginLeft: 12, marginBottom: 6,
+    ...TYPOGRAPHY.overline,
+    color: COLORS.textMuted,
+    marginLeft: SPACING.sm,
+    marginBottom: SPACING.xs,
   },
   menuItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingVertical: 11, paddingHorizontal: 12, borderRadius: 12, marginVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 10,
+    marginVertical: 1,
+    position: 'relative',
   },
-  menuItemActive: { backgroundColor: '#eef4fb' },
-  activeAccent: {
-    position: 'absolute', left: 0, top: 10, bottom: 10, width: 3.5,
-    borderRadius: 2, backgroundColor: NAVY,
+  menuItemActive: { 
+    backgroundColor: 'rgba(91, 124, 250, 0.06)',
   },
-  iconWrap: {
-    width: 34, height: 34, borderRadius: 10, backgroundColor: '#f1f5f9',
-    alignItems: 'center', justifyContent: 'center',
+  menuIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: 'rgba(90, 107, 124, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  iconWrapActive: { backgroundColor: NAVY },
-  menuLabel: { fontSize: 15, color: '#334155', fontWeight: '600' },
-  menuLabelActive: { color: NAVY, fontWeight: '800' },
+  menuIconBoxActive: { 
+    backgroundColor: 'rgba(91, 124, 250, 0.08)',
+  },
+  menuLabel: { 
+    ...TYPOGRAPHY.body,
+    color: COLORS.text,
+    flex: 1,
+    fontFamily: FONTS.medium,
+  },
+  menuLabelActive: { 
+    color: COLORS.primary,
+    fontWeight: '700',
+    fontFamily: FONTS.semibold,
+  },
+  badge: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    minWidth: 18,
+    alignItems: 'center',
+  },
+  badgeText: {
+    ...TYPOGRAPHY.caption,
+    color: '#fff',
+    fontWeight: '800',
+    fontFamily: FONTS.bold,
+  },
+  activeIndicator: {
+    width: 2.5,
+    height: 20,
+    borderRadius: 1.5,
+    backgroundColor: COLORS.accent,
+  },
 
-  logoutButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginHorizontal: 16, marginTop: 8, padding: 14, backgroundColor: '#fff1f2',
-    borderRadius: 12, borderWidth: 1, borderColor: '#fecdd3',
+  // Footer
+  drawerFooter: {
+    paddingHorizontal: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: SPACING.md,
+    gap: SPACING.xs,
   },
-  logoutText: { color: '#be123c', fontSize: 15, fontWeight: '700' },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(212, 90, 90, 0.06)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 90, 90, 0.1)',
+  },
+  logoutText: { 
+    ...TYPOGRAPHY.body,
+    color: COLORS.error,
+    fontWeight: '700',
+    fontFamily: FONTS.semibold,
+  },
+  footerVersion: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    fontFamily: FONTS.medium,
+  },
 });
