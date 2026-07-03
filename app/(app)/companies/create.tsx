@@ -5,17 +5,21 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
   Alert,
   Image,
   Platform,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useRouter, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import * as Haptics from 'expo-haptics';
 import { useCreateCompany } from '../../../src/hooks/useCompanies';
+import { WizardStepper, type WizardStep } from '../../../src/components/WizardStepper';
 import type { Emirate } from '../../../src/types/company.types';
 
 const NAVY = '#1e3a5f';
@@ -34,6 +38,12 @@ const EMIRATES: { label: string; value: Emirate }[] = [
   { label: 'Fujairah', value: 'fujairah' },
 ];
 
+const STEPS: WizardStep[] = [
+  { label: 'Basic Info', sub: 'Name & branding', icon: 'briefcase' },
+  { label: 'Address & Contact', sub: 'Location & how to reach you', icon: 'map-pin' },
+  { label: 'Tax / Invoicing', sub: 'TRN & registration', icon: 'file-text' },
+];
+
 type PickedFile = { uri: string; name: string; type: string };
 
 const formatDate = (d: Date) =>
@@ -41,7 +51,10 @@ const formatDate = (d: Date) =>
 
 export default function CreateCompanyScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { mutate: createCompany, isPending } = useCreateCompany();
+
+  const [step, setStep] = useState(0);
 
   // ── Required ──
   const [name, setName] = useState('');
@@ -66,6 +79,7 @@ export default function CreateCompanyScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setStep(0);
       setName('');
       setTrn('');
       setStreetAddress('');
@@ -99,10 +113,7 @@ export default function CreateCompanyScreen() {
       Alert.alert('Permission needed', 'Please allow photo library access to select a logo.');
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.8,
-    });
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
       setLogo({
@@ -113,24 +124,42 @@ export default function CreateCompanyScreen() {
     }
   };
 
-  const validate = (): boolean => {
+  // ── Per-step validation ──
+  const validateStep = (s: number): boolean => {
     const errors: Record<string, string> = {};
-    if (!name.trim()) errors.name = 'Trading name is required.';
-    if (!trn.trim()) {
-      errors.trn = 'TRN is required.';
-    } else if (!/^\d{15}$/.test(trn.trim())) {
-      errors.trn = 'TRN must be exactly 15 numeric digits.';
+    if (s === 0) {
+      if (!name.trim()) errors.name = 'Trading name is required.';
     }
-    if (!streetAddress.trim()) errors.street_address = 'Street address is required.';
-    if (!country.trim()) errors.country = 'Country is required.';
-    if (!city.trim()) errors.city = 'City is required.';
-
-    setFieldErrors(errors);
+    if (s === 1) {
+      if (!streetAddress.trim()) errors.street_address = 'Street address is required.';
+      if (!country.trim()) errors.country = 'Country is required.';
+      if (!city.trim()) errors.city = 'City is required.';
+    }
+    if (s === 2) {
+      if (!trn.trim()) errors.trn = 'TRN is required.';
+      else if (!/^\d{15}$/.test(trn.trim())) errors.trn = 'TRN must be exactly 15 numeric digits.';
+    }
+    setFieldErrors((prev) => ({ ...prev, ...errors }));
     return Object.keys(errors).length === 0;
   };
 
+  const goNext = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (!validateStep(step)) return;
+    if (step < STEPS.length - 1) setStep((s) => s + 1);
+    else handleSubmit();
+  };
+  const goBack = () => {
+    Haptics.selectionAsync().catch(() => {});
+    if (step === 0) router.back();
+    else setStep((s) => s - 1);
+  };
+
   const handleSubmit = () => {
-    if (!validate()) return;
+    // Validate all steps; jump to the first with an error.
+    for (let s = 0; s < STEPS.length; s++) {
+      if (!validateStep(s)) { setStep(s); return; }
+    }
 
     const payload: any = {
       name: name.trim(),
@@ -150,6 +179,7 @@ export default function CreateCompanyScreen() {
 
     createCompany(payload, {
       onSuccess: () => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         router.back();
       },
       onError: (err: any) => {
@@ -160,6 +190,10 @@ export default function CreateCompanyScreen() {
             flattened[key] = Array.isArray(val) ? val[0] : String(val);
           });
           setFieldErrors(flattened);
+          // Surface the step that owns the first failing field.
+          if (flattened.name) setStep(0);
+          else if (flattened.street_address || flattened.country || flattened.city) setStep(1);
+          else if (flattened.trn) setStep(2);
         } else {
           const message = err?.response?.data?.error?.message ?? 'Could not create company. Please try again.';
           Alert.alert('Error', message);
@@ -168,249 +202,156 @@ export default function CreateCompanyScreen() {
     });
   };
 
+  const isLast = step === STEPS.length - 1;
+
   return (
-    <>
+    <View style={styles.screen}>
       <Stack.Screen options={{ title: 'New Company' }} />
-      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        {/* ── Logo ── */}
-        <View style={styles.logoRow}>
-          <TouchableOpacity style={styles.logoBox} onPress={pickLogo} activeOpacity={0.8}>
-            {logo ? (
-              <Image source={{ uri: logo.uri }} style={styles.logoImage} />
-            ) : (
-              <Text style={styles.logoBoxText}>No logo</Text>
-            )}
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <TouchableOpacity style={styles.uploadButton} onPress={pickLogo}>
-              <Text style={styles.uploadButtonText}>
-                {logo ? 'Change logo' : 'Upload logo'}
-              </Text>
-            </TouchableOpacity>
-            <Text style={styles.logoHint}>PNG or JPG · appears on your invoices</Text>
+      <WizardStepper steps={STEPS} current={step} />
+
+      <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} bottomOffset={40}>
+        {/* ══ Step 0 — Basic Info ══ */}
+        {step === 0 && (
+          <View style={styles.card}>
+            <View style={styles.logoRow}>
+              <TouchableOpacity style={styles.logoBox} onPress={pickLogo} activeOpacity={0.8}>
+                {logo ? <Image source={{ uri: logo.uri }} style={styles.logoImage} /> : <Feather name="image" size={22} color={SLATE} />}
+              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <TouchableOpacity style={styles.uploadButton} onPress={pickLogo}>
+                  <Feather name="upload" size={14} color={NAVY} />
+                  <Text style={styles.uploadButtonText}>{logo ? 'Change logo' : 'Upload logo'}</Text>
+                </TouchableOpacity>
+                <Text style={styles.logoHint}>PNG or JPG · appears on your invoices</Text>
+              </View>
+            </View>
+
+            <Field label="Trading name" required value={name}
+              onChangeText={(v: string) => { setName(v); clearFieldError('name'); }}
+              error={fieldErrors.name} placeholder="Acme LLC" maxLength={120} />
+            <Field label="Legal name" value={legalName} onChangeText={setLegalName}
+              placeholder="Acme Limited Liability Company" maxLength={150} />
           </View>
-        </View>
-
-        {/* ── Trading / Legal name ── */}
-        <View style={styles.row2}>
-          <Field
-            style={styles.flex1}
-            label="Trading name"
-            required
-            value={name}
-            onChangeText={(v: string) => { setName(v); clearFieldError('name'); }}
-            error={fieldErrors.name}
-            placeholder="Acme LLC"
-          />
-          <Field
-            style={styles.flex1}
-            label="Legal name"
-            value={legalName}
-            onChangeText={setLegalName}
-            placeholder="Acme Limited Liability Company"
-          />
-        </View>
-
-        {/* ── TRN ── */}
-        <Field
-          label="TRN"
-          required
-          value={trn}
-          onChangeText={(v: string) => { setTrn(v); clearFieldError('trn'); }}
-          error={fieldErrors.trn}
-          placeholder="100123456700003"
-          hint="Exactly 15 numeric digits — no letters or symbols"
-          keyboardType="number-pad"
-          maxLength={15}
-        />
-
-        {/* ── TRN dates ── */}
-        <View style={styles.row2}>
-          <DateField
-            style={styles.flex1}
-            label="TRN issue date"
-            date={trnIssueDate}
-            onPress={() => setShowIssuePicker(true)}
-          />
-          <DateField
-            style={styles.flex1}
-            label="TRN expiry date"
-            date={trnExpiryDate}
-            onPress={() => setShowExpiryPicker(true)}
-          />
-        </View>
-        {showIssuePicker && (
-          <DateTimePicker
-            value={trnIssueDate ?? new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={(_, selected) => {
-              setShowIssuePicker(false);
-              if (selected) setTrnIssueDate(selected);
-            }}
-          />
-        )}
-        {showExpiryPicker && (
-          <DateTimePicker
-            value={trnExpiryDate ?? new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            onChange={(_, selected) => {
-              setShowExpiryPicker(false);
-              if (selected) setTrnExpiryDate(selected);
-            }}
-          />
         )}
 
-        {/* ── Street address ── */}
-        <Field
-          label="Street address"
-          required
-          value={streetAddress}
-          onChangeText={(v: string) => { setStreetAddress(v); clearFieldError('street_address'); }}
-          error={fieldErrors.street_address}
-          placeholder="Office 501, Al Futtaim Tower, Festival City"
-        />
+        {/* ══ Step 1 — Address & Contact ══ */}
+        {step === 1 && (
+          <View style={styles.card}>
+            <Field label="Street address" required value={streetAddress}
+              onChangeText={(v: string) => { setStreetAddress(v); clearFieldError('street_address'); }}
+              error={fieldErrors.street_address} placeholder="Office 501, Al Futtaim Tower, Festival City" maxLength={200} />
 
-        {/* ── Country / City ── */}
-        <View style={styles.row2}>
-          <Field
-            style={styles.flex1}
-            label="Country"
-            required
-            value={country}
-            onChangeText={(v: string) => { setCountry(v.toUpperCase()); clearFieldError('country'); }}
-            error={fieldErrors.country}
-            placeholder="AE"
-            maxLength={2}
-            autoCapitalize="characters"
-          />
-          <Field
-            style={styles.flex1}
-            label="City"
-            required
-            value={city}
-            onChangeText={(v: string) => { setCity(v); clearFieldError('city'); }}
-            error={fieldErrors.city}
-            placeholder="Dubai"
-          />
-        </View>
+            <View style={styles.row2}>
+              <Field style={styles.flex1} label="Country" required value={country}
+                onChangeText={(v: string) => { setCountry(v.toUpperCase()); clearFieldError('country'); }}
+                error={fieldErrors.country} placeholder="AE" maxLength={2} autoCapitalize="characters" />
+              <Field style={styles.flex1} label="City" required value={city}
+                onChangeText={(v: string) => { setCity(v); clearFieldError('city'); }}
+                error={fieldErrors.city} placeholder="Dubai" maxLength={80} />
+            </View>
 
-        {/* ── Emirate ── */}
-        <Text style={styles.fieldLabel}>Emirate</Text>
-        <View style={styles.chipsWrap}>
-          {EMIRATES.map((e) => (
-            <TouchableOpacity
-              key={e.value}
-              style={[styles.chip, emirate === e.value && styles.chipActive]}
-              onPress={() => setEmirate(e.value)}
-            >
-              <Text style={[styles.chipText, emirate === e.value && styles.chipTextActive]}>{e.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+            <Text style={styles.fieldLabel}>Emirate</Text>
+            <View style={styles.chipsWrap}>
+              {EMIRATES.map((e) => (
+                <TouchableOpacity key={e.value} style={[styles.chip, emirate === e.value && styles.chipActive]}
+                  onPress={() => setEmirate(e.value)}>
+                  <Text style={[styles.chipText, emirate === e.value && styles.chipTextActive]}>{e.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-        {/* ── Phone / Email ── */}
-        <View style={styles.row2}>
-          <Field
-            style={styles.flex1}
-            label="Phone"
-            value={phone}
-            onChangeText={setPhone}
-            placeholder="50 123 4567"
-            keyboardType="phone-pad"
-          />
-          <Field
-            style={styles.flex1}
-            label="Email"
-            value={email}
-            onChangeText={setEmail}
-            placeholder="info@company.ae"
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-        </View>
+            <View style={styles.row2}>
+              <Field style={styles.flex1} label="Phone" value={phone} onChangeText={setPhone}
+                placeholder="50 123 4567" keyboardType="phone-pad" maxLength={30} />
+              <Field style={styles.flex1} label="Email" value={email} onChangeText={setEmail}
+                placeholder="info@company.ae" keyboardType="email-address" autoCapitalize="none" maxLength={100} />
+            </View>
 
-        {/* ── Website ── */}
-        <Field
-          label="Website"
-          value={website}
-          onChangeText={setWebsite}
-          placeholder="https://company.ae"
-          autoCapitalize="none"
-        />
+            <Field label="Website" value={website} onChangeText={setWebsite}
+              placeholder="https://company.ae" autoCapitalize="none" maxLength={150} />
+          </View>
+        )}
 
-        <TouchableOpacity
-          style={[styles.submitButton, isPending && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={isPending}
-        >
+        {/* ══ Step 2 — Tax / Invoicing ══ */}
+        {step === 2 && (
+          <View style={styles.card}>
+            <Field label="TRN" required value={trn}
+              onChangeText={(v: string) => { setTrn(v.replace(/[^0-9]/g, '')); clearFieldError('trn'); }}
+              error={fieldErrors.trn} placeholder="100123456700003"
+              hint="Exactly 15 numeric digits — no letters or symbols" keyboardType="number-pad" maxLength={15} />
+
+            <View style={styles.row2}>
+              <DateField style={styles.flex1} label="TRN issue date" date={trnIssueDate} onPress={() => setShowIssuePicker(true)} />
+              <DateField style={styles.flex1} label="TRN expiry date" date={trnExpiryDate} onPress={() => setShowExpiryPicker(true)} />
+            </View>
+            {showIssuePicker && (
+              <DateTimePicker value={trnIssueDate ?? new Date()} mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, selected) => { setShowIssuePicker(false); if (selected) setTrnIssueDate(selected); }} />
+            )}
+            {showExpiryPicker && (
+              <DateTimePicker value={trnExpiryDate ?? new Date()} mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(_, selected) => { setShowExpiryPicker(false); if (selected) setTrnExpiryDate(selected); }} />
+            )}
+
+            <View style={styles.reviewNote}>
+              <Feather name="check-circle" size={15} color={NAVY} />
+              <Text style={styles.reviewNoteText}>All set — tap “Create Company” to finish.</Text>
+            </View>
+          </View>
+        )}
+
+        <View style={{ height: 20 }} />
+      </KeyboardAwareScrollView>
+
+      {/* Footer nav */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+        <TouchableOpacity style={styles.backBtn} onPress={goBack} disabled={isPending}>
+          <Text style={styles.backBtnText}>{step === 0 ? 'Cancel' : '‹ Back'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.nextBtn, isPending && { opacity: 0.6 }]} onPress={goNext} disabled={isPending}>
           {isPending ? (
             <ActivityIndicator color="#fff" />
+          ) : isLast ? (
+            <>
+              <Feather name="check" size={16} color="#fff" />
+              <Text style={styles.nextBtnText}>Create Company</Text>
+            </>
           ) : (
-            <Text style={styles.submitButtonText}>Create Company</Text>
+            <>
+              <Text style={styles.nextBtnText}>Next</Text>
+              <Feather name="arrow-right" size={16} color="#fff" />
+            </>
           )}
         </TouchableOpacity>
-      </ScrollView>
-    </>
+      </View>
+    </View>
   );
 }
 
 // ───────────────────────────────────────────
-// Reusable field component
+// Reusable field components
 // ───────────────────────────────────────────
-function Field({
-  label,
-  required,
-  error,
-  hint,
-  style,
-  ...inputProps
-}: {
-  label: string;
-  required?: boolean;
-  error?: string;
-  hint?: string;
-  style?: any;
-  [key: string]: any;
-}) {
+function Field({ label, required, error, hint, style, ...inputProps }: any) {
   return (
     <View style={[styles.fieldWrap, style]}>
       <Text style={styles.fieldLabel}>
         {label} {required && <Text style={styles.requiredStar}>*</Text>}
       </Text>
-      <TextInput
-        style={[styles.input, error && styles.inputError]}
-        placeholderTextColor="#94a3b8"
-        {...inputProps}
-      />
-      {error ? (
-        <Text style={styles.errorText}>{error}</Text>
-      ) : hint ? (
-        <Text style={styles.hintText}>{hint}</Text>
-      ) : null}
+      <TextInput style={[styles.input, error && styles.inputError]} placeholderTextColor="#94a3b8" {...inputProps} />
+      {error ? <Text style={styles.errorText}>{error}</Text> : hint ? <Text style={styles.hintText}>{hint}</Text> : null}
     </View>
   );
 }
 
-function DateField({
-  label,
-  date,
-  onPress,
-  style,
-}: {
-  label: string;
-  date: Date | null;
-  onPress: () => void;
-  style?: any;
-}) {
+function DateField({ label, date, onPress, style }: { label: string; date: Date | null; onPress: () => void; style?: any }) {
   return (
     <View style={[styles.fieldWrap, style]}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TouchableOpacity style={styles.dateInput} onPress={onPress} activeOpacity={0.7}>
-        <Text style={date ? styles.dateValueText : styles.datePlaceholderText}>
-          {date ? formatDate(date) : 'mm/dd/yyyy'}
-        </Text>
+        <Text style={date ? styles.dateValueText : styles.datePlaceholderText}>{date ? formatDate(date) : 'Select date'}</Text>
+        <Feather name="calendar" size={16} color={SLATE} />
       </TouchableOpacity>
     </View>
   );
@@ -418,19 +359,21 @@ function DateField({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: BG },
-  content: { padding: 20, paddingBottom: 48 },
+  content: { padding: 16, paddingBottom: 20 },
+
+  card: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: BORDER, padding: 16 },
 
   // Logo
-  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 },
   logoBox: {
-    width: 64, height: 64, borderRadius: 12, backgroundColor: '#eef1f5',
+    width: 64, height: 64, borderRadius: 14, backgroundColor: '#eef1f5',
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  logoImage: { width: 64, height: 64, borderRadius: 12 },
-  logoBoxText: { fontSize: 11, color: SLATE, textAlign: 'center' },
+  logoImage: { width: 64, height: 64, borderRadius: 14 },
   uploadButton: {
-    alignSelf: 'flex-start', borderWidth: 1, borderColor: BORDER, borderRadius: 10,
-    paddingHorizontal: 16, paddingVertical: 9, backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'center', gap: 7, alignSelf: 'flex-start',
+    borderWidth: 1, borderColor: BORDER, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#fff',
   },
   uploadButtonText: { fontSize: 14, fontWeight: '600', color: NAVY },
   logoHint: { fontSize: 12, color: SLATE, marginTop: 6 },
@@ -444,17 +387,17 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 13, fontWeight: '600', color: NAVY, marginBottom: 6 },
   requiredStar: { color: ERROR },
   input: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER, borderRadius: 10,
+    backgroundColor: '#f9fafc', borderWidth: 1.5, borderColor: BORDER, borderRadius: 10,
     paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#1e293b',
   },
-  inputError: { borderColor: ERROR },
-  errorText: { fontSize: 12, color: ERROR, marginTop: 4 },
+  inputError: { borderColor: ERROR, backgroundColor: '#fef2f2' },
+  errorText: { fontSize: 12, color: ERROR, marginTop: 4, fontWeight: '600' },
   hintText: { fontSize: 12, color: SLATE, marginTop: 4 },
 
   // Date field
   dateInput: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER, borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 12,
+    backgroundColor: '#f9fafc', borderWidth: 1.5, borderColor: BORDER, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   dateValueText: { fontSize: 15, color: '#1e293b' },
   datePlaceholderText: { fontSize: 15, color: '#94a3b8' },
@@ -466,8 +409,25 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, color: SLATE, fontWeight: '500' },
   chipTextActive: { color: '#fff' },
 
-  // Submit
-  submitButton: { backgroundColor: NAVY, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
-  submitButtonDisabled: { opacity: 0.6 },
-  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  reviewNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#eef2f8', borderRadius: 10, padding: 12, marginTop: 2,
+  },
+  reviewNoteText: { fontSize: 13, color: NAVY, fontWeight: '600' },
+
+  // Footer
+  footer: {
+    flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12,
+    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: BORDER,
+  },
+  backBtn: {
+    paddingHorizontal: 20, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: BORDER, backgroundColor: '#fff', justifyContent: 'center',
+  },
+  backBtnText: { color: SLATE, fontWeight: '700', fontSize: 14 },
+  nextBtn: {
+    flex: 1, flexDirection: 'row', gap: 8, backgroundColor: NAVY, borderRadius: 12,
+    paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
+  },
+  nextBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });

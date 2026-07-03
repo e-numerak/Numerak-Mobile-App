@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,8 @@ import {
   Alert,
   Switch,
   Image,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -29,6 +31,19 @@ const BORDER = '#e8edf3';
 const BG = '#f6f8fb';
 const ERROR = '#dc2626';
 const GREEN = '#16a34a';
+
+// Fade-in + slide-up wrapper with a staggerable delay (premium load-in).
+function FadeSlideCard({ children, delay = 0, style }: { children: ReactNode; delay?: number; style?: any }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 420, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 420, delay, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+  }, []);
+  return <Animated.View style={[{ opacity, transform: [{ translateY }] }, style]}>{children}</Animated.View>;
+}
 
 const EMIRATES: { label: string; value: Emirate }[] = [
   { label: 'Dubai', value: 'dubai' },
@@ -182,59 +197,63 @@ export default function CompanyDetailScreen() {
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: isEditing ? 'Edit Company' : company.name,
-          headerRight: () =>
-            isEditing ? null : (
-              <TouchableOpacity onPress={() => setIsEditing(true)} hitSlop={10}>
-                <Text style={styles.headerActionText}>Edit</Text>
-              </TouchableOpacity>
-            ),
-        }}
-      />
+      <Stack.Screen options={{ title: company.name }} />
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         {/* ── Gradient hero header ── */}
         {!isEditing && (
-          <LinearGradient
-            colors={['#1e3a5f', '#16314f', '#0c1d30']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.hero}
-          >
-            <View style={styles.heroTop}>
-              {company.logo_url ? (
-                <Image source={{ uri: company.logo_url }} style={styles.heroLogo} />
-              ) : (
-                <View style={styles.heroAvatar}>
-                  <Text style={styles.heroAvatarText}>
-                    {(company.name || '?').slice(0, 2).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              {company.is_active ? (
-                <View style={styles.activeBadge}>
-                  <View style={styles.activeDot} />
-                  <Text style={styles.activeBadgeText}>Active</Text>
-                </View>
-              ) : (
-                <View style={styles.inactiveBadge}>
-                  <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
-                </View>
-              )}
-            </View>
+          <FadeSlideCard delay={0}>
+            <LinearGradient
+              colors={['#22456e', '#16314f', '#0a1728']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.hero}
+            >
+              {/* Decorative depth circles */}
+              <View style={styles.heroGlow} />
+              <View style={styles.heroGlow2} />
+              <View style={styles.heroGoldLine} />
 
-            <Text style={styles.heroName}>{company.name}</Text>
-            {company.legal_name && company.legal_name !== company.name ? (
-              <Text style={styles.heroLegal}>{company.legal_name}</Text>
-            ) : null}
+              <View style={styles.heroTop}>
+                {company.logo_url ? (
+                  <Image source={{ uri: company.logo_url }} style={styles.heroLogo} />
+                ) : (
+                  <LinearGradient
+                    colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.06)']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.heroAvatar}
+                  >
+                    <Text style={styles.heroAvatarText}>
+                      {(company.name || '?').slice(0, 2).toUpperCase()}
+                    </Text>
+                  </LinearGradient>
+                )}
+                {company.is_active ? (
+                  <View style={styles.activeBadge}>
+                    <View style={styles.activeDot} />
+                    <Text style={styles.activeBadgeText}>Active</Text>
+                  </View>
+                ) : (
+                  <View style={styles.inactiveBadge}>
+                    <Text style={styles.inactiveBadgeText}>INACTIVE</Text>
+                  </View>
+                )}
+              </View>
 
-            <View style={styles.heroTrnRow}>
-              <Feather name="hash" size={13} color="#93c5fd" />
-              <Text style={styles.heroTrnLabel}>TRN</Text>
-              <Text style={styles.heroTrnValue}>{company.trn}</Text>
-            </View>
-          </LinearGradient>
+              <Text style={styles.heroName}>{company.name}</Text>
+              {company.legal_name && company.legal_name !== company.name ? (
+                <Text style={styles.heroLegal}>{company.legal_name}</Text>
+              ) : null}
+
+              <View style={styles.heroTrnRow}>
+                <View style={styles.heroTrnIcon}>
+                  <Feather name="hash" size={12} color="#93c5fd" />
+                </View>
+                <Text style={styles.heroTrnLabel}>TRN</Text>
+                <Text style={styles.heroTrnValue}>{company.trn}</Text>
+              </View>
+            </LinearGradient>
+          </FadeSlideCard>
         )}
 
         {/* ── Fields ── */}
@@ -246,59 +265,38 @@ export default function CompanyDetailScreen() {
 
         {/* ── Related sections ── */}
         {!isEditing && (
-          <View style={styles.linksGroup}>
-            <LinkRow
-              icon="users"
-              tint="#2563eb"
-              bg="#eff6ff"
-              label="Members"
-              count={company.member_count}
-              onPress={() => router.push(`/companies/${companyId}/members` as any)}
-            />
-            <View style={styles.linkDivider} />
-            <LinkRow
-              icon="user-check"
-              tint={GREEN}
-              bg="#f0fdf4"
-              label="Customers"
-              onPress={() => router.push(`/companies/${companyId}/customers` as any)}
-            />
-          </View>
+          <FadeSlideCard delay={340}>
+            <View style={styles.linksGroup}>
+              <LinkRow
+                icon="users"
+                tint="#2563eb"
+                bg="#eff6ff"
+                label="Members"
+                count={company.member_count}
+                onPress={() => router.push(`/companies/${companyId}/members` as any)}
+              />
+              <View style={styles.linkDivider} />
+              <LinkRow
+                icon="user-check"
+                tint={GREEN}
+                bg="#f0fdf4"
+                label="Customers"
+                onPress={() => router.push(`/companies/${companyId}/customers` as any)}
+              />
+            </View>
+          </FadeSlideCard>
         )}
 
-        {/* ── Action buttons ── */}
-        {isEditing ? (
-          <View style={styles.editActions}>
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancel} disabled={isSaving}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.saveButton, isSaving && styles.disabledButton]}
-              onPress={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Save changes</Text>}
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={[styles.deactivateButton, isDeleting && styles.disabledButton]}
-            onPress={handleDeactivate}
-            disabled={isDeleting}
-            activeOpacity={0.7}
-          >
-            {isDeleting ? (
-              <ActivityIndicator color={ERROR} />
-            ) : (
-              <>
-                <Feather name="slash" size={16} color={ERROR} />
-                <View>
-                  <Text style={styles.deactivateButtonTitle}>Deactivate company</Text>
-                  <Text style={styles.deactivateButtonSubtitle}>Can be reversed later by an admin</Text>
-                </View>
-              </>
-            )}
-          </TouchableOpacity>
+        {/* Company edit & deactivation are admin-only — managed outside the app. */}
+        {!isEditing && (
+          <FadeSlideCard delay={420}>
+            <View style={styles.adminNote}>
+              <Feather name="lock" size={14} color={SLATE} />
+              <Text style={styles.adminNoteText}>
+                Company details can only be changed by an administrator.
+              </Text>
+            </View>
+          </FadeSlideCard>
         )}
       </ScrollView>
     </>
@@ -417,29 +415,33 @@ function ViewFields({ company }: { company: any }) {
 
   return (
     <>
-      {groups.map((group) => (
-        <View key={group.title} style={styles.card}>
-          <View style={styles.groupHead}>
-            <View style={styles.groupIcon}>
-              <Feather name={group.icon} size={14} color={NAVY} />
+      {groups.map((group, gi) => (
+        <FadeSlideCard key={group.title} delay={100 + gi * 90}>
+          <View style={styles.card}>
+            <View style={styles.groupHead}>
+              <View style={styles.groupIcon}>
+                <Feather name={group.icon} size={14} color={NAVY} />
+              </View>
+              <Text style={styles.groupTitle}>{group.title}</Text>
             </View>
-            <Text style={styles.groupTitle}>{group.title}</Text>
+            {group.rows.map((row, i) => {
+              const hasValue = row.value != null && String(row.value).trim() !== '';
+              return (
+                <View
+                  key={row.label}
+                  style={[styles.viewRow, i === group.rows.length - 1 && styles.viewRowLast]}
+                >
+                  <Text style={styles.viewLabel}>{row.label}</Text>
+                  {hasValue ? (
+                    <Text style={styles.viewValue} numberOfLines={2}>{row.value}</Text>
+                  ) : (
+                    <Text style={styles.viewValueEmpty}>—</Text>
+                  )}
+                </View>
+              );
+            })}
           </View>
-          {group.rows.map((row, i) => (
-            <View
-              key={row.label}
-              style={[styles.viewRow, i === group.rows.length - 1 && styles.viewRowLast]}
-            >
-              <Text style={styles.viewLabel}>{row.label}</Text>
-              <Text
-                style={row.value ? styles.viewValue : styles.viewValueEmpty}
-                numberOfLines={2}
-              >
-                {row.value || 'Not provided'}
-              </Text>
-            </View>
-          ))}
-        </View>
+        </FadeSlideCard>
       ))}
     </>
   );
@@ -530,22 +532,35 @@ const styles = StyleSheet.create({
 
   // Hero
   hero: {
-    borderRadius: 20, padding: 20, marginBottom: 14,
-    shadowColor: '#1e3a5f', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2, shadowRadius: 14, elevation: 5,
+    borderRadius: 22, padding: 20, marginBottom: 14, overflow: 'hidden',
+    shadowColor: '#0a1728', shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3, shadowRadius: 18, elevation: 8,
+  },
+  heroGlow: {
+    position: 'absolute', top: -50, right: -30, width: 150, height: 150,
+    borderRadius: 75, backgroundColor: 'rgba(91,141,239,0.18)',
+  },
+  heroGlow2: {
+    position: 'absolute', bottom: -60, left: -20, width: 140, height: 140,
+    borderRadius: 70, backgroundColor: 'rgba(37,99,235,0.12)',
+  },
+  heroGoldLine: {
+    position: 'absolute', top: 0, left: 26, right: 26, height: 2,
+    backgroundColor: 'rgba(147,197,253,0.5)', borderRadius: 1,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroLogo: { width: 54, height: 54, borderRadius: 14, backgroundColor: '#fff' },
+  heroLogo: { width: 58, height: 58, borderRadius: 16, backgroundColor: '#fff' },
   heroAvatar: {
-    width: 54, height: 54, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.14)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)', alignItems: 'center', justifyContent: 'center',
+    width: 58, height: 58, borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center',
   },
-  heroAvatarText: { color: '#fff', fontSize: 20, fontWeight: '900' },
-  heroName: { color: '#fff', fontSize: 21, fontWeight: '800', marginTop: 14, letterSpacing: -0.3 },
+  heroAvatarText: { color: '#fff', fontSize: 21, fontWeight: '900', letterSpacing: 0.5 },
+  heroName: { color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 16, letterSpacing: -0.4 },
   heroLegal: { color: '#cbd5e1', fontSize: 13, marginTop: 3 },
-  heroTrnRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+  heroTrnRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 14 },
+  heroTrnIcon: { width: 22, height: 22, borderRadius: 7, backgroundColor: 'rgba(147,197,253,0.15)', alignItems: 'center', justifyContent: 'center' },
   heroTrnLabel: { color: '#93c5fd', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  heroTrnValue: { color: '#e2e8f0', fontSize: 13, fontWeight: '600', letterSpacing: 0.5 },
+  heroTrnValue: { color: '#e2e8f0', fontSize: 13.5, fontWeight: '700', letterSpacing: 0.5 },
 
   activeBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(34,197,94,0.18)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 5 },
   activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4ade80' },
@@ -573,7 +588,7 @@ const styles = StyleSheet.create({
   viewRowLast: { borderBottomWidth: 0, paddingBottom: 2 },
   viewLabel: { fontSize: 13.5, color: SLATE },
   viewValue: { fontSize: 14, color: '#0f172a', fontWeight: '600', flex: 1, textAlign: 'right' },
-  viewValueEmpty: { fontSize: 13, color: MUTED, fontStyle: 'italic', flex: 1, textAlign: 'right' },
+  viewValueEmpty: { fontSize: 16, color: '#cbd5e1', fontWeight: '700', flex: 1, textAlign: 'right' },
 
   // Edit mode fields
   fieldWrap: { marginBottom: 16 },
@@ -619,6 +634,13 @@ const styles = StyleSheet.create({
   },
   deactivateButtonTitle: { color: ERROR, fontSize: 15, fontWeight: '700' },
   deactivateButtonSubtitle: { color: '#f87171', fontSize: 12, fontWeight: '500', marginTop: 2 },
+
+  adminNote: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12,
+    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: BORDER,
+  },
+  adminNoteText: { color: SLATE, fontSize: 13, fontWeight: '500' },
 
   errorTitle: { fontSize: 16, fontWeight: '700', color: NAVY, marginBottom: 16 },
   retryButton: { backgroundColor: NAVY, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 },

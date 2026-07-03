@@ -5,14 +5,12 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
   Alert,
-  ScrollView,
   Animated,
   Easing,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -20,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 
 import { useAuthStore } from '../../src/store/authStore';
 import { tokenStorage } from '../../src/utils/tokenStorage';
+import { NumerakMark } from '../../src/components/NumerakLogo';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_MAX_LENGTH = 100;
@@ -35,6 +34,10 @@ export default function LoginScreen() {
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+
+  // Refs for return-key field navigation.
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
 
   // ---- Animations (visual only — no effect on functionality) ----
   const headerAnim = useRef(new Animated.Value(0)).current; // 0 -> 1 entrance
@@ -226,15 +229,14 @@ export default function LoginScreen() {
         ]}
       />
 
-      <KeyboardAvoidingView
+      <KeyboardAwareScrollView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        bottomOffset={28}
+        extraKeyboardSpace={0}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
           <Animated.View
             style={[
               styles.headerSection,
@@ -251,31 +253,27 @@ export default function LoginScreen() {
               },
             ]}
           >
-            <Animated.View style={{ transform: [{ scale: logoScale }] }}>
+            <Animated.View style={{ transform: [{ scale: logoScale }], marginBottom: spacing.md }}>
               {/* Pulsing halo behind the logo */}
               <Animated.View
                 style={[
                   styles.logoGlow,
                   {
-                    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.7] }),
+                    opacity: glow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.6] }),
                     transform: [
                       {
-                        scale: glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.28] }),
+                        scale: glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.3] }),
                       },
                     ],
                   },
                 ]}
               />
-              <LinearGradient
-                colors={['#3b82f6', '#2563eb', '#1d4ed8']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoCircle}
-              >
-                <Text style={styles.logoText}>EN</Text>
-              </LinearGradient>
+              <NumerakMark size={84} />
             </Animated.View>
-            <Text style={styles.title}>E-Numerak</Text>
+            <Text style={styles.title}>
+              E-<Text style={styles.titleAccent}>N</Text>umerak
+            </Text>
+            <Text style={styles.brandTag}>SMART BILLING. SEAMLESS BUSINESS.</Text>
             <Text style={styles.subtitle}>Sign in to your account</Text>
           </Animated.View>
 
@@ -301,6 +299,7 @@ export default function LoginScreen() {
                 <Text style={styles.required}> *</Text>
               </View>
               <TextInput
+                ref={emailRef}
                 style={[
                   styles.input,
                   emailFocused && styles.inputFocused,
@@ -315,6 +314,8 @@ export default function LoginScreen() {
                   setEmailFocused(false);
                   setEmailError(validateEmail(email));
                 }}
+                returnKeyType="next"
+                onSubmitEditing={() => passwordRef.current?.focus()}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
@@ -329,6 +330,7 @@ export default function LoginScreen() {
               </View>
               <View style={[styles.passwordWrap, passwordFocused && styles.inputFocused]}>
                 <TextInput
+                  ref={passwordRef}
                   style={styles.passwordInput}
                   placeholder="Enter your password"
                   placeholderTextColor={colors.textMuted}
@@ -337,6 +339,8 @@ export default function LoginScreen() {
                   onFocus={() => setPasswordFocused(true)}
                   onBlur={() => setPasswordFocused(false)}
                   secureTextEntry={!showPassword}
+                  returnKeyType="go"
+                  onSubmitEditing={handleLogin}
                   autoCapitalize="none"
                   editable={!isAuthLoading}
                 />
@@ -414,19 +418,9 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </Animated.View>
 
-              <View style={styles.registerRow}>
-                <Text style={styles.registerText}>Don't have an account? </Text>
-                <TouchableOpacity
-                  onPress={() => router.push('/register')}
-                  disabled={isAuthLoading}
-                >
-                  <Text style={styles.registerLink}>Register</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </LinearGradient>
   );
 }
@@ -536,12 +530,12 @@ const styles = StyleSheet.create({
   },
   logoGlow: {
     position: 'absolute',
-    top: -9,
-    left: -9,
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: '#60a5fa',
+    top: -8,
+    left: -8,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#3b82f6',
   },
   logoCircle: {
     width: 70,
@@ -564,6 +558,17 @@ const styles = StyleSheet.create({
     ...typography.title,
     textAlign: 'center',
     color: colors.textOnDark,
+    letterSpacing: 0.3,
+    fontWeight: '900',
+  },
+  titleAccent: { color: '#5b8def' },
+  brandTag: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.5)',
+    letterSpacing: 2.4,
+    marginTop: 7,
+    textAlign: 'center',
   },
   subtitle: {
     ...typography.subtitle,

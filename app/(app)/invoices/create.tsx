@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useRouter, useLocalSearchParams, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -19,6 +20,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useCompanies } from '../../../src/hooks/useCompanies';
 import { useCustomers } from '../../../src/hooks/useCustomers';
 import { useCreateInvoice, useProducts } from '../../../src/hooks/useInvoices';
+import { INVOICE_TYPE_INDEX } from '../../../src/constants/invoiceTypes';
 import {
   fetchDraftAutosave,
   saveDraftAutosave,
@@ -80,6 +82,14 @@ const VAT_RATE_TYPES: Opt<VatRateType>[] = [
 ];
 const VAT_RATE_MAP: Record<VatRateType, number> = { standard: 5, zero: 0, exempt: 0, out_of_scope: 0 };
 
+// Character limits per field (enforced on the input + surfaced as a counter)
+const LIMIT = {
+  location: 200, itemName: 120, description: 500, unit: 20,
+  qty: 12, price: 14, permit: 50, txnId: 50, po: 50, gl: 50, discount: 14, notes: 1000,
+};
+// Reference/ID fields: letters, numbers and a few safe separators only.
+const REF_RE = /^[A-Za-z0-9\-_/.#&() ]*$/;
+
 const STEPS = [
   { key: 'info', label: 'Your Info', sub: 'Your company (seller) details', icon: 'briefcase' },
   { key: 'buyer', label: 'Buyer', sub: 'Select the customer being invoiced', icon: 'user' },
@@ -110,8 +120,9 @@ function invoiceNumberPreview(): string {
 
 export default function CreateInvoiceScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ companyId?: string }>();
+  const params = useLocalSearchParams<{ companyId?: string; typeKey?: string }>();
   const insets = useSafeAreaInsets();
+  const selectedType = params.typeKey ? INVOICE_TYPE_INDEX[params.typeKey] : undefined;
   const { data: companies } = useCompanies();
   const { mutateAsync: createInvoice, isPending } = useCreateInvoice();
 
@@ -150,6 +161,12 @@ export default function CreateInvoiceScreen() {
   useEffect(() => {
     if (!companyId && companies && companies.length > 0) setCompanyId(companies[0].id);
   }, [companies, companyId]);
+
+  // Apply the transaction-type default implied by the chosen invoice type.
+  useEffect(() => {
+    if (selectedType?.transactionType) setTransactionType(selectedType.transactionType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.typeKey]);
 
   const { data: customerData } = useCustomers({ company_id: companyId });
   const customers = customerData?.results ?? [];
@@ -200,6 +217,28 @@ export default function CreateInvoiceScreen() {
   const taxable = Math.max(0, subtotal - discount);
   const totalVat = lineCalcs.reduce((s, l) => s + l.vat, 0);
   const grandTotal = taxable + totalVat;
+
+  // ── Step 4 (Details) — live field validation ────────────────────────────────
+  const detailErrors = useMemo(() => {
+    const e: Record<string, string> = {};
+    const checkRef = (val: string, key: string, label: string, required?: boolean) => {
+      const v = val.trim();
+      if (!v) { if (required) e[key] = `${label} is required.`; return; }
+      if (!REF_RE.test(v)) e[key] = 'Only letters, numbers and - _ / . # & ( ) are allowed.';
+    };
+    checkRef(permitNumber, 'permit', 'Permit Number');
+    checkRef(transactionId, 'txnId', 'Transaction ID');
+    checkRef(purchaseOrderNumber, 'po', 'Purchase Order Number');
+    checkRef(glAccountId, 'gl', 'GL / Account ID', true);
+
+    if (discountAmount.trim()) {
+      const d = Number(discountAmount);
+      if (Number.isNaN(d)) e.discount = 'Enter a valid amount.';
+      else if (d < 0) e.discount = 'Discount cannot be negative.';
+      else if (subtotal > 0 && d > subtotal) e.discount = 'Discount cannot exceed the subtotal.';
+    }
+    return e;
+  }, [permitNumber, transactionId, purchaseOrderNumber, glAccountId, discountAmount, subtotal]);
 
   function updateItem(idx: number, patch: Partial<FormItem>) {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -292,10 +331,27 @@ export default function CreateInvoiceScreen() {
         (it) => it.description.trim() && parseFloat(it.quantity) > 0 && parseFloat(it.unit_price) >= 0
       );
       if (!anyValid) { Alert.alert('Items required', 'Add at least one item with a description, quantity and price.'); return false; }
+      // Format checks on any filled-in numbers
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.quantity.trim() && !(parseFloat(it.quantity) > 0)) {
+          Alert.alert('Check item ' + (i + 1), 'Quantity must be a number greater than 0.'); return false;
+        }
+        if (it.unit_price.trim() && !(parseFloat(it.unit_price) >= 0)) {
+          Alert.alert('Check item ' + (i + 1), 'Unit price must be 0 or more.'); return false;
+        }
+      }
     }
     if (s === 3) {
       if (!issueDate.trim()) { Alert.alert('Required', 'Issue Date is required.'); return false; }
-      if (!glAccountId.trim()) { Alert.alert('Required', 'GL / Account ID is required.'); return false; }
+      // Date order sanity
+      if (dueDate.trim() && dueDate < issueDate) {
+        Alert.alert('Check dates', 'Due Date cannot be earlier than the Issue Date.'); return false;
+      }
+      const keys = Object.keys(detailErrors);
+      if (keys.length > 0) {
+        Alert.alert('Check the highlighted fields', detailErrors[keys[0]]); return false;
+      }
     }
     return true;
   }
@@ -356,7 +412,7 @@ export default function CreateInvoiceScreen() {
     const payload: CreateInvoicePayload = {
       company_id: companyId,
       customer_id: customerId,
-      invoice_type: 'tax_invoice',
+      invoice_type: selectedType?.invoiceType ?? 'tax_invoice',
       transaction_type: transactionType,
       currency,
       payment_means_code: paymentMeansCode,
@@ -431,7 +487,7 @@ export default function CreateInvoiceScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" bottomOffset={40}>
         {restorePayload && step === 0 && (
           <View style={styles.restoreBanner}>
             <Feather name="rotate-ccw" size={18} color="#1d4ed8" />
@@ -454,6 +510,23 @@ export default function CreateInvoiceScreen() {
           <View style={styles.autoStatusRow}>
             <Feather name={autoStatus === 'saving' ? 'upload-cloud' : 'check-circle'} size={13} color={autoStatus === 'saving' ? SLATE : GREEN} />
             <Text style={styles.autoStatusText}>{autoStatus === 'saving' ? 'Saving draft…' : 'Draft autosaved'}</Text>
+          </View>
+        )}
+
+        {/* Selected document / supply type */}
+        {selectedType && (
+          <View style={styles.typeBanner}>
+            <View style={styles.typeBannerIcon}>
+              <Feather name={selectedType.icon} size={16} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.typeBannerTitle}>{selectedType.title}</Text>
+              <Text style={styles.typeBannerSub}>{selectedType.subtitle}</Text>
+            </View>
+            <View style={styles.typeBannerTags}>
+              <View style={styles.typeChip}><Text style={styles.typeChipText}>{selectedType.code}</Text></View>
+              <View style={styles.typeChip}><Text style={styles.typeChipText}>{selectedType.vat}</Text></View>
+            </View>
           </View>
         )}
 
@@ -488,7 +561,7 @@ export default function CreateInvoiceScreen() {
               </>
             )}
             <TextField label="Supplier Location" required value={supplierLocation}
-              onChange={setSupplierLocation} placeholder="e.g. Office 7, Dubai, UAE" />
+              onChange={setSupplierLocation} placeholder="e.g. Office 7, Dubai, UAE" maxLength={LIMIT.location} />
             <SelectField label="Accounts Receivable / Payable" required value={arType}
               options={AR_AP_OPTIONS} placeholder="— Select —" onChange={setArType}
               hint="Required for audit file" />
@@ -506,7 +579,7 @@ export default function CreateInvoiceScreen() {
               placeholder={customers.length ? 'Select a customer…' : 'No customers — add one first'}
               onChange={setCustomerId} />
             <TextField label="Customer Location" required value={customerLocation}
-              onChange={setCustomerLocation} placeholder="e.g. Riyadh, Saudi Arabia" />
+              onChange={setCustomerLocation} placeholder="e.g. Riyadh, Saudi Arabia" maxLength={LIMIT.location} />
           </View>
         )}
 
@@ -534,23 +607,27 @@ export default function CreateInvoiceScreen() {
                     />
                   )}
                   <TextField label="Item / Service Name" value={item.item_name}
-                    onChange={(v) => updateItem(idx, { item_name: v })} placeholder="e.g. IT Consulting" />
+                    onChange={(v) => updateItem(idx, { item_name: v })} placeholder="e.g. IT Consulting" maxLength={LIMIT.itemName} />
                   <TextField label="Description of Goods / Services" required value={item.description}
-                    onChange={(v) => updateItem(idx, { description: v })} placeholder="Full description…" />
+                    onChange={(v) => updateItem(idx, { description: v })} placeholder="Full description…" maxLength={LIMIT.description} />
                   <View style={styles.row2}>
                     <View style={styles.col}>
                       <TextField label="Quantity" required value={item.quantity}
-                        onChange={(v) => updateItem(idx, { quantity: v })} keyboardType="decimal-pad" placeholder="1" />
+                        onChange={(v) => updateItem(idx, { quantity: v.replace(/[^0-9.]/g, '') })} keyboardType="decimal-pad" placeholder="1"
+                        maxLength={LIMIT.qty}
+                        error={item.quantity.trim() && !(parseFloat(item.quantity) > 0) ? 'Must be greater than 0.' : undefined} />
                     </View>
                     <View style={styles.col}>
                       <TextField label="Unit" value={item.unit}
-                        onChange={(v) => updateItem(idx, { unit: v })} placeholder="pcs / hr / kg" />
+                        onChange={(v) => updateItem(idx, { unit: v })} placeholder="pcs / hr / kg" maxLength={LIMIT.unit} />
                     </View>
                   </View>
                   <View style={styles.row2}>
                     <View style={styles.col}>
                       <TextField label="Unit Price (excl. VAT)" required value={item.unit_price}
-                        onChange={(v) => updateItem(idx, { unit_price: v })} keyboardType="decimal-pad" placeholder="0.00" />
+                        onChange={(v) => updateItem(idx, { unit_price: v.replace(/[^0-9.]/g, '') })} keyboardType="decimal-pad" placeholder="0.00"
+                        maxLength={LIMIT.price}
+                        error={item.unit_price.trim() && !(parseFloat(item.unit_price) >= 0) ? 'Enter a valid price.' : undefined} />
                     </View>
                     <View style={styles.col}>
                       <SelectField label="VAT Rate" value={item.vat_rate_type}
@@ -600,11 +677,11 @@ export default function CreateInvoiceScreen() {
                 </View>
               </View>
               <View style={styles.row2}>
-                <View style={styles.col}><TextField label="Permit Number" value={permitNumber} onChange={setPermitNumber} placeholder="e.g. UAE-PERMIT-2024-XXXX" /></View>
-                <View style={styles.col}><TextField label="Transaction ID" value={transactionId} onChange={setTransactionId} placeholder="e.g. TXN-2024-000001" /></View>
+                <View style={styles.col}><TextField label="Permit Number" value={permitNumber} onChange={setPermitNumber} placeholder="e.g. UAE-PERMIT-20" maxLength={LIMIT.permit} error={detailErrors.permit} /></View>
+                <View style={styles.col}><TextField label="Transaction ID" value={transactionId} onChange={setTransactionId} placeholder="e.g. TXN-2024-00" maxLength={LIMIT.txnId} error={detailErrors.txnId} /></View>
               </View>
-              <TextField label="Purchase Order Number" value={purchaseOrderNumber} onChange={setPurchaseOrderNumber} placeholder="Buyer PO reference" />
-              <TextField label="GL / Account ID" required value={glAccountId} onChange={setGlAccountId} placeholder="e.g. GL-4100 or AR-001" />
+              <TextField label="Purchase Order Number" value={purchaseOrderNumber} onChange={setPurchaseOrderNumber} placeholder="Buyer PO reference" maxLength={LIMIT.po} error={detailErrors.po} />
+              <TextField label="GL / Account ID" required value={glAccountId} onChange={setGlAccountId} placeholder="e.g. GL-4100 or AR-001" maxLength={LIMIT.gl} error={glAccountId.trim() ? detailErrors.gl : undefined} />
             </View>
 
             <View style={styles.card}>
@@ -614,8 +691,8 @@ export default function CreateInvoiceScreen() {
                 <Text style={styles.label}>Exchange Rate to AED</Text>
                 <View style={styles.readonlyInput}><Text style={styles.readonlyText}>1.000000</Text></View>
               </View>
-              <TextField label="Invoice Discount" value={discountAmount} onChange={setDiscountAmount} keyboardType="decimal-pad" placeholder="0.00" />
-              <TextField label="Notes" value={notes} onChange={setNotes} placeholder="Optional notes…" multiline />
+              <TextField label="Invoice Discount" value={discountAmount} onChange={(v) => setDiscountAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.discount} error={detailErrors.discount} />
+              <TextField label="Notes" value={notes} onChange={setNotes} placeholder="Optional notes…" multiline maxLength={LIMIT.notes} />
             </View>
           </>
         )}
@@ -668,7 +745,7 @@ export default function CreateInvoiceScreen() {
         )}
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Footer nav — hidden while a picker sheet is open */}
       {!pickerOpen && (
@@ -707,19 +784,35 @@ export default function CreateInvoiceScreen() {
 
 // ─── Reusable fields ──────────────────────────────────────────────────────────
 function TextField({
-  label, value, onChange, placeholder, required, keyboardType, multiline,
+  label, value, onChange, placeholder, required, keyboardType, multiline, maxLength, error,
 }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string;
   required?: boolean; keyboardType?: 'default' | 'decimal-pad' | 'numeric'; multiline?: boolean;
+  maxLength?: number; error?: string;
 }) {
+  const showCounter = !!maxLength && value.length >= Math.floor(maxLength * 0.7);
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}{required && <Text style={styles.req}> *</Text>}</Text>
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>{label}{required && <Text style={styles.req}> *</Text>}</Text>
+        {showCounter && (
+          <Text style={[styles.counter, value.length >= (maxLength as number) && styles.counterMax]}>
+            {value.length}/{maxLength}
+          </Text>
+        )}
+      </View>
       <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
+        style={[styles.input, multiline && styles.inputMultiline, !!error && styles.inputError]}
         value={value} onChangeText={onChange} placeholder={placeholder} placeholderTextColor="#94a3b8"
         keyboardType={keyboardType ?? 'default'} multiline={multiline} autoCapitalize="none"
+        maxLength={maxLength}
       />
+      {!!error && (
+        <View style={styles.errRow}>
+          <Feather name="alert-circle" size={12} color={ERROR} />
+          <Text style={styles.errText}>{error}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -869,6 +962,17 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: BORDER, padding: 16, marginBottom: 14 },
   cardTitle: { fontSize: 15, fontWeight: '800', color: NAVY, marginBottom: 12 },
 
+  typeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#0a2540', borderRadius: 14, padding: 14, marginBottom: 14,
+  },
+  typeBannerIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  typeBannerTitle: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  typeBannerSub: { fontSize: 12, color: '#cbd5e1', marginTop: 2 },
+  typeBannerTags: { gap: 5, alignItems: 'flex-end' },
+  typeChip: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
+  typeChipText: { fontSize: 10.5, fontWeight: '800', color: '#e2e8f0' },
+
   companyCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 12, marginBottom: 14 },
   companyLogo: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center', justifyContent: 'center' },
   companyLogoText: { color: '#fff', fontWeight: '800', fontSize: 15 },
@@ -876,9 +980,15 @@ const styles = StyleSheet.create({
   companySub: { fontSize: 12, color: SLATE, marginTop: 2 },
 
   field: { marginBottom: 14 },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 6 },
+  counter: { fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6 },
+  counterMax: { color: ERROR },
   req: { color: ERROR, fontWeight: '700' },
   input: { borderWidth: 1.5, borderColor: BORDER, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, backgroundColor: '#f9fafc', color: '#0f172a' },
+  inputError: { borderColor: ERROR, backgroundColor: '#fef2f2' },
+  errRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
+  errText: { fontSize: 12, color: ERROR, fontWeight: '600', flex: 1 },
   inputMultiline: { minHeight: 70, textAlignVertical: 'top' },
   row2: { flexDirection: 'row', gap: 12 },
   col: { flex: 1 },

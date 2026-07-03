@@ -274,9 +274,13 @@ export default function DashboardScreen() {
   const { data: stats, isLoading: statsLoading, refetch, isRefetching } =
     useInvoiceDashboard(companyId);
 
+  // Fetch a large page so we can both list the recent 5 AND compute the
+  // headline totals from real invoices (the backend's total_revenue only
+  // counts realized/paid invoices, so pending invoices would read as 0).
   const { data: recent, isLoading: recentLoading, refetch: refetchRecent } =
-    useInvoices({ company_id: companyId, page_size: 5 });
-  const recentInvoices = recent?.results ?? [];
+    useInvoices({ company_id: companyId, page_size: 200 });
+  const allInvoices = recent?.results ?? [];
+  const recentInvoices = allInvoices.slice(0, 5);
 
   const onRefresh = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -289,10 +293,25 @@ export default function DashboardScreen() {
     ([, v]) => (v ?? 0) > 0
   ) as [InvoiceStatus, number][];
 
-  const totalInvoices = stats?.total_invoices ?? 0;
-  const revenue       = Number(stats?.total_revenue ?? 0);
-  const totalVat      = Number(stats?.total_vat ?? 0);
-  const avg           = totalInvoices > 0 ? revenue / totalInvoices : 0;
+  // Invoiced revenue = sum of every active (non-void) invoice's total.
+  const VOID_STATUSES: InvoiceStatus[] = ['cancelled', 'deactivated', 'rejected'];
+  const activeInvoices = allInvoices.filter((i) => !VOID_STATUSES.includes(i.status));
+  const computedRevenue = activeInvoices.reduce((s, i) => s + Number(i.total_amount ?? 0), 0);
+  const computedVat = activeInvoices.reduce((s, i) => s + Number(i.total_vat ?? 0), 0);
+
+  // Prefer the computed figure; fall back to the backend value if we have no
+  // invoices loaded yet (e.g. list still fetching).
+  const backendRevenue = Number(stats?.total_revenue ?? 0);
+  const backendVat = Number(stats?.total_vat ?? 0);
+  const revenue = computedRevenue > 0 ? computedRevenue : backendRevenue;
+  const totalVat = computedVat > 0 ? computedVat : backendVat;
+
+  const totalInvoices = stats?.total_invoices ?? recent?.pagination?.count ?? allInvoices.length;
+  const revenueCount = activeInvoices.length || totalInvoices;
+  const avg = revenueCount > 0 ? revenue / revenueCount : 0;
+
+  // The hero waits on both the stats and the invoice list.
+  const heroLoading = statsLoading || recentLoading;
 
   if (companiesLoading) return <LoadingScreen label="Loading dashboard…" />;
 
@@ -395,7 +414,7 @@ export default function DashboardScreen() {
                 </View>
               </View>
 
-              {statsLoading ? (
+              {heroLoading ? (
                 <Shimmer
                   width="70%"
                   height={38}
@@ -415,7 +434,7 @@ export default function DashboardScreen() {
 
               <View style={styles.heroStats}>
                 <View style={styles.heroStat}>
-                  {statsLoading ? (
+                  {heroLoading ? (
                     <Shimmer width={40} height={14} base="rgba(255,255,255,0.12)" highlight="rgba(255,255,255,0.28)" style={{ marginBottom: 6 }} />
                   ) : (
                     <AnimatedNumber
@@ -428,7 +447,7 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.heroDivider} />
                 <View style={styles.heroStat}>
-                  {statsLoading ? (
+                  {heroLoading ? (
                     <Shimmer width={64} height={14} base="rgba(255,255,255,0.12)" highlight="rgba(255,255,255,0.28)" style={{ marginBottom: 6 }} />
                   ) : (
                     <AnimatedNumber
@@ -441,7 +460,7 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.heroDivider} />
                 <View style={styles.heroStat}>
-                  {statsLoading ? (
+                  {heroLoading ? (
                     <Shimmer width={64} height={14} base="rgba(255,255,255,0.12)" highlight="rgba(255,255,255,0.28)" style={{ marginBottom: 6 }} />
                   ) : (
                     <AnimatedNumber
@@ -462,7 +481,7 @@ export default function DashboardScreen() {
               style={styles.createBtn}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                router.push({ pathname: '/invoices/create', params: { companyId } } as any);
+                router.push({ pathname: '/invoices/new', params: { companyId } } as any);
               }}
               activeOpacity={0.88}
             >

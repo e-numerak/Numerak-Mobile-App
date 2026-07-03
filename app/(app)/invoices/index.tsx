@@ -249,7 +249,7 @@ export default function InvoicesScreen() {
           style={styles.createBtn}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-            router.push({ pathname: '/invoices/create', params: { companyId } } as any);
+            router.push({ pathname: '/invoices/new', params: { companyId } } as any);
           }}
         >
           <Text style={styles.createBtnText}>+ Create</Text>

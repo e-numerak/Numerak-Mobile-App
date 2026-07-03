@@ -55,8 +55,8 @@ export default function VerifyEmailScreen() {
     if (!email) {
       Alert.alert(
         'Missing Email',
-        'We could not find your email address. Please register again.',
-        [{ text: 'OK', onPress: () => router.replace('/register') }]
+        'We could not find your email address. Please sign in again.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]
       );
       return;
     }

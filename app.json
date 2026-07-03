@@ -22,7 +22,8 @@
         "backgroundColor": "#1e3a5f"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.enumerakapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -31,6 +32,13 @@
       "expo-router",
       "expo-secure-store",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "028bf721-105d-4343-9c7a-81280db5b640"
+      }
+    },
+    "owner": "ehtisham787"
   }
 }
