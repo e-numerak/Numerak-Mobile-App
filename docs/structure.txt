@@ -39,24 +39,9 @@ enumerak-app/
 │   │   │   │   └── payments.tsx
 │   │   │   └── products.tsx
 │   │   │
-│   │   ├── inbound/
-│   │   │   ├── index.tsx              
-│   │   │   ├── stats.tsx
-│   │   │   ├── [pk]/
-│   │   │   │   └── index.tsx
-│   │   │   ├── suppliers.tsx
-│   │   │   └── portal.tsx
 │   │   │
 │   │   ├── reports/
-│   │   │   └── index.tsx        
-│   │   ├── ocr/
-│   │   │   └── index.tsx       
-│   │   ├── fraud/
-│   │   │   └── index.tsx       
-│   │   ├── chat/
-│   │   │   └── index.tsx        
-│   │   ├── buyers/
-│   │   │   └── index.tsx       
+│   │   │   └── index.tsx            
 │   │   └── settings/
 │   │       └── profile.tsx     
 │   │
@@ -71,12 +56,6 @@ enumerak-app/
 │   │   ├── customers.api.ts    
 │   │   ├── taxes.api.ts           
 │   │   ├── invoices.api.ts
-│   │   ├── inbound.api.ts
-│   │   ├── reports.api.ts
-│   │   ├── ocr.api.ts
-│   │   ├── fraud.api.ts
-│   │   ├── chat.api.ts
-│   │   └── buyers.api.ts
 │   │
 │   ├── hooks/
 │   │   ├── useAuth.ts
@@ -132,4 +111,3 @@ Known limitation: Customer documents (logo, trn_document) can only be set
 at creation time — CustomerUpdateSerializer doesn't accept file re-uploads,
 so edit mode shows a notice instead of file pickers.
 
-Legend: ✅ done · 🟡 placeholder, scheduled for Day 3+
