@@ -51,19 +51,7 @@ The app communicates exclusively with the **E-Numerak REST API** (`https://api.e
 | **Invoices** | List, create (with line items), detail view, status transitions (submit/cancel), validation |
 | **Navigation** | Protected Drawer with SmartHeaderLeft (hamburger ↔ back arrow), global loading bar, active route highlighting |
 
-### 🟡 Placeholders (Scheduled)
 
-| Module | Status |
-|---|---|
-| Inbound Invoices | Placeholder — Day 4 target |
-| Fraud Detection | Placeholder — Day 4 target |
-| OCR Scanning | Placeholder — Day 4 target |
-| AI Chat | Placeholder — Day 4 target |
-| Buyers Portal | Placeholder — Day 4 target |
-| Settings / Profile | Placeholder — Day 4 target |
-| RBAC (Role-based UI) | Planned — will layer on top of existing CRUD |
-
----
 
 ## Tech Stack
 
@@ -363,6 +351,6 @@ This software is proprietary and confidential. Unauthorized copying, distributio
 
 **E-Numerak** · UAE Invoicing  
 Built with ❤️ by AL Merak Tax Consultant LLC  Developer : Ehtisham Malik
-`https://www.e-numerak.com`
+
 
 </div>
