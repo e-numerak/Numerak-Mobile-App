@@ -45,11 +45,39 @@ const BG = '#f6f8fb';
 const ERROR = '#dc2626';
 const GREEN = '#16a34a';
 
+
 // Lets any Select/Date picker tell the screen a bottom sheet is open,
 // so the fixed footer (Back/Next) can be hidden while it's showing.
 const PickerCtx = createContext<(open: boolean) => void>(() => {});
 
 type Opt<T extends string> = { value: T; label: string };
+
+const TAX_CODE_OPTIONS: Opt<string>[] = [
+  { value: 'S', label: 'S — Standard 5%' },
+  { value: 'Z', label: 'Z — Zero Rate 0%' },
+  { value: 'E', label: 'E — Exempt' },
+  { value: 'O', label: 'O — Out of Scope' },
+];
+
+const UNIT_OPTIONS: Opt<string>[] = [
+  { value: 'pcs', label: 'pcs' },
+  { value: 'hr', label: 'hr' },
+  { value: 'kg', label: 'kg' },
+  { value: 'g', label: 'g' },
+  { value: 'm', label: 'm' },
+  { value: 'm²', label: 'm²' },
+  { value: 'm³', label: 'm³' },
+  { value: 'L', label: 'L' },
+  { value: 'ml', label: 'ml' },
+  { value: 'box', label: 'box' },
+  { value: 'set', label: 'set' },
+  { value: 'pair', label: 'pair' },
+  { value: 'doz', label: 'doz' },
+  { value: 'day', label: 'day' },
+  { value: 'month', label: 'month' },
+  { value: 'year', label: 'year' },
+  { value: 'unit', label: 'unit' },
+];
 
 const AR_AP_OPTIONS: Opt<string>[] = [
   { value: 'AR', label: 'Accounts Receivable (AR)' },
@@ -86,6 +114,7 @@ const VAT_RATE_MAP: Record<VatRateType, number> = { standard: 5, zero: 0, exempt
 const LIMIT = {
   location: 200, itemName: 120, description: 500, unit: 20,
   qty: 12, price: 14, permit: 50, txnId: 50, po: 50, gl: 50, discount: 14, notes: 1000,
+  taxCode: 5, debit: 14, credit: 14,
 };
 // Reference/ID fields: letters, numbers and a few safe separators only.
 const REF_RE = /^[A-Za-z0-9\-_/.#&() ]*$/;
@@ -93,18 +122,28 @@ const REF_RE = /^[A-Za-z0-9\-_/.#&() ]*$/;
 const STEPS = [
   { key: 'info', label: 'Your Info', sub: 'Your company (seller) details', icon: 'briefcase' },
   { key: 'buyer', label: 'Buyer', sub: 'Select the customer being invoiced', icon: 'user' },
-  { key: 'items', label: 'Line Items', sub: 'Products & services', icon: 'package' },
+  { key: 'items', label: 'Product Catalog', sub: 'Products & services', icon: 'package' },
   { key: 'details', label: 'Details', sub: 'Dates, references & currency', icon: 'file-text' },
   { key: 'qr', label: 'Print Code', sub: 'Scan-to-verify QR code', icon: 'grid' },
   { key: 'review', label: 'Review', sub: 'Confirm & create', icon: 'check-circle' },
 ] as const;
 
 interface FormItem {
-  item_name: string; description: string; quantity: string; unit: string;
-  unit_price: string; vat_rate_type: VatRateType;
+  item_name: string;
+  product_reference: string;
+  description: string;
+  quantity: string;
+  unit: string;
+  unit_price: string;
+  vat_rate_type: VatRateType;
+  tax_code: string;        // NEW
+  debit_amount: string;    // NEW
+  credit_amount: string;   // NEW
 }
 const emptyItem = (): FormItem => ({
-  item_name: '', description: '', quantity: '1', unit: '', unit_price: '', vat_rate_type: 'standard',
+  item_name: '', product_reference: '', description: '', quantity: '1', unit: '',
+  unit_price: '', vat_rate_type: 'standard',
+  tax_code: '', debit_amount: '', credit_amount: '',   // NEW
 });
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -183,16 +222,18 @@ export default function CreateInvoiceScreen() {
     label: `${p.name}${p.unit_price ? ` — ${p.unit_price}` : ''}`,
   }));
   function applyProduct(idx: number, productId: string) {
-    const p = productList.find((x) => x.id === productId);
-    if (!p) return;
-    updateItem(idx, {
-      item_name: p.name ?? '',
-      description: p.description || p.name || '',
-      unit_price: String(p.unit_price ?? ''),
-      unit: p.unit ?? '',
-      vat_rate_type: (p.vat_rate_type as VatRateType) ?? 'standard',
-    });
-  }
+  const p = productList.find((x) => x.id === productId);
+  if (!p) return;
+  updateItem(idx, {
+    item_name: p.name ?? '',
+    product_reference: (p as any).product_reference ?? "",
+    description: p.description || p.name || '',
+    unit_price: String(p.unit_price ?? ''),
+    unit: p.unit ?? '',
+    vat_rate_type: (p.vat_rate_type as VatRateType) ?? 'standard',
+    tax_code: (p as any).tax_code ?? '',   // NEW — agar backend product model mein hai
+  });
+}
 
   // Prefill supplier location from the company, once
   useEffect(() => {
@@ -326,23 +367,28 @@ export default function CreateInvoiceScreen() {
       if (!customerId) { Alert.alert('Required', 'Please select a customer (buyer).'); return false; }
       if (!customerLocation.trim()) { Alert.alert('Required', 'Customer Location is required.'); return false; }
     }
-    if (s === 2) {
-      const anyValid = items.some(
-        (it) => it.description.trim() && parseFloat(it.quantity) > 0 && parseFloat(it.unit_price) >= 0
-      );
-      if (!anyValid) { Alert.alert('Items required', 'Add at least one item with a description, quantity and price.'); return false; }
-      // Format checks on any filled-in numbers
-      for (let i = 0; i < items.length; i++) {
-        const it = items[i];
-        if (it.quantity.trim() && !(parseFloat(it.quantity) > 0)) {
-          Alert.alert('Check item ' + (i + 1), 'Quantity must be a number greater than 0.'); return false;
-        }
-        if (it.unit_price.trim() && !(parseFloat(it.unit_price) >= 0)) {
-          Alert.alert('Check item ' + (i + 1), 'Unit price must be 0 or more.'); return false;
-        }
-      }
-    }
-    if (s === 3) {
+
+  if (s === 2) {
+  const anyValid = items.some(
+    (it) => it.item_name.trim() && it.product_reference.trim() && it.description.trim()
+      && it.unit.trim() && it.tax_code.trim()
+      && parseFloat(it.quantity) > 0 && parseFloat(it.unit_price) >= 0
+  );
+  if (!anyValid) { Alert.alert('Items required', 'Add at least one complete line item.'); return false; }
+
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it.item_name.trim()) { Alert.alert('Check item ' + (i + 1), 'Item / Service Name is required.'); return false; }
+    if (!it.product_reference.trim()) { Alert.alert('Check item ' + (i + 1), 'Product / Service Reference is required.'); return false; }
+    if (!it.description.trim()) { Alert.alert('Check item ' + (i + 1), 'Description is required.'); return false; }
+    if (!it.unit.trim()) { Alert.alert('Check item ' + (i + 1), 'Unit is required.'); return false; }
+    if (it.quantity.trim() && !(parseFloat(it.quantity) > 0)) { Alert.alert('Check item ' + (i + 1), 'Quantity must be greater than 0.'); return false; }
+    if (it.unit_price.trim() && !(parseFloat(it.unit_price) >= 0)) { Alert.alert('Check item ' + (i + 1), 'Unit price must be 0 or more.'); return false; }
+    if (!it.debit_amount.trim() || !(parseFloat(it.debit_amount) >= 0)) { Alert.alert('Check item ' + (i + 1), 'Debit Amount is required.'); return false; }
+    if (!it.credit_amount.trim() || !(parseFloat(it.credit_amount) >= 0)) { Alert.alert('Check item ' + (i + 1), 'Credit Amount is required.'); return false; }
+  }
+}
+  if (s === 3) {
       if (!issueDate.trim()) { Alert.alert('Required', 'Issue Date is required.'); return false; }
       // Date order sanity
       if (dueDate.trim() && dueDate < issueDate) {
@@ -397,15 +443,19 @@ export default function CreateInvoiceScreen() {
       if (!(qty > 0)) { setStep(2); Alert.alert('Item error', `Item #${i + 1}: quantity must be greater than 0.`); return; }
       const price = parseFloat(it.unit_price);
       if (!(price >= 0)) { setStep(2); Alert.alert('Item error', `Item #${i + 1}: unit price cannot be negative.`); return; }
-      validItems.push({
-        item_name: it.item_name.trim() || undefined,
-        description: it.description.trim(),
-        quantity: qty,
-        unit: it.unit.trim() || undefined,
-        unit_price: price,
-        vat_rate_type: it.vat_rate_type,
-        sort_order: i,
-      });
+            validItems.push({
+            item_name: it.item_name.trim() || undefined,
+            product_reference: it.product_reference.trim(),
+            description: it.description.trim(),
+            quantity: qty,
+            unit: it.unit.trim() || undefined,
+            unit_price: price,
+            vat_rate_type: it.vat_rate_type,
+            tax_code: it.tax_code.trim(),               // NEW
+            debit_amount: parseFloat(it.debit_amount) || 0,   // NEW
+            credit_amount: parseFloat(it.credit_amount) || 0, // NEW
+            sort_order: i,
+          });
     }
     if (validItems.length === 0) { setStep(2); Alert.alert('Items required', 'Add at least one line item.'); return; }
 
@@ -606,10 +656,35 @@ export default function CreateInvoiceScreen() {
                       onChange={(pid) => applyProduct(idx, pid)}
                     />
                   )}
-                  <TextField label="Item / Service Name" value={item.item_name}
-                    onChange={(v) => updateItem(idx, { item_name: v })} placeholder="e.g. IT Consulting" maxLength={LIMIT.itemName} />
-                  <TextField label="Description of Goods / Services" required value={item.description}
-                    onChange={(v) => updateItem(idx, { description: v })} placeholder="Full description…" maxLength={LIMIT.description} />
+                  <TextField 
+                    label="Item / Service Name" 
+                    required 
+                    value={item.item_name}
+                    onChange={(v) => updateItem(idx, { item_name: v })} 
+                    placeholder="e.g. IT Consulting" 
+                    maxLength={50} 
+                    error={step === 2 && !item.item_name.trim() ? 'Item name is required.' : undefined} 
+                  />
+
+                  <TextField 
+                    label="Product / Service Reference" 
+                    required 
+                    value={item.product_reference}
+                    onChange={(v) => updateItem(idx, { product_reference: v })} 
+                    placeholder="e.g. SKU-001 or SVC-REF" 
+                    maxLength={50} 
+                    error={step === 2 && !item.product_reference.trim() ? 'Required' : undefined} 
+                  />
+
+                  <TextField 
+                    label="Description of Goods / Services" 
+                    required 
+                    value={item.description}
+                    onChange={(v) => updateItem(idx, { description: v })} 
+                    placeholder="Full description…" 
+                    maxLength={LIMIT.description} 
+                    error={step === 2 && !item.description.trim() ? 'Description is required.' : undefined} 
+                  />
                   <View style={styles.row2}>
                     <View style={styles.col}>
                       <TextField label="Quantity" required value={item.quantity}
@@ -618,8 +693,9 @@ export default function CreateInvoiceScreen() {
                         error={item.quantity.trim() && !(parseFloat(item.quantity) > 0) ? 'Must be greater than 0.' : undefined} />
                     </View>
                     <View style={styles.col}>
-                      <TextField label="Unit" value={item.unit}
-                        onChange={(v) => updateItem(idx, { unit: v })} placeholder="pcs / hr / kg" maxLength={LIMIT.unit} />
+                      <SelectField label="Unit" required value={item.unit}
+                       options={UNIT_OPTIONS} placeholder="— Select —"
+                        onChange={(v) => updateItem(idx, { unit: v })} />
                     </View>
                   </View>
                   <View style={styles.row2}>
@@ -634,6 +710,27 @@ export default function CreateInvoiceScreen() {
                         options={VAT_RATE_TYPES} onChange={(v) => updateItem(idx, { vat_rate_type: v as VatRateType })} />
                     </View>
                   </View>
+                  <View style={styles.row2}>
+                  <View style={styles.col}>
+                    <SelectField label="Tax Code" value={item.tax_code}
+                      options={TAX_CODE_OPTIONS} placeholder="— Select —"
+                      onChange={(v) => updateItem(idx, { tax_code: v })} />
+                  </View>
+                </View>
+                <View style={styles.row2}>
+                  <View style={styles.col}>
+                    <TextField label="Debit Amount (AED)" required value={item.debit_amount}
+                      onChange={(v) => updateItem(idx, { debit_amount: v.replace(/[^0-9.]/g, '') })}
+                      keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.debit}
+                      error={item.debit_amount.trim() && !(parseFloat(item.debit_amount) >= 0) ? 'Enter a valid amount.' : undefined} />
+                  </View>
+                  <View style={styles.col}>
+                    <TextField label="Credit Amount (AED)" required value={item.credit_amount}
+                      onChange={(v) => updateItem(idx, { credit_amount: v.replace(/[^0-9.]/g, '') })}
+                      keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.credit}
+                      error={item.credit_amount.trim() && !(parseFloat(item.credit_amount) >= 0) ? 'Enter a valid amount.' : undefined} />
+                  </View>
+                </View>
                   <Text style={styles.itemTotal}>
                     Line total: {money((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) * (1 + VAT_RATE_MAP[item.vat_rate_type] / 100))}
                   </Text>

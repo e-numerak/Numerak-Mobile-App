@@ -69,12 +69,16 @@ export interface InvoiceItem {
 // Body for POST /invoices/{id}/items/  — matches InvoiceItemCreateSerializer
 export interface CreateInvoiceItemPayload {
   item_name?: string;
+  product_reference?: string;   // agar pehle se nahi hai
   description: string;
-  quantity: number;             // sent as number, backend coerces to Decimal
+  quantity: number;
   unit?: string;
   unit_price: number;
-  vat_rate_type?: VatRateType;  // default 'standard'
-  sort_order?: number;          // default 0
+  vat_rate_type?: VatRateType;
+  tax_code?: string;        // NEW
+  debit_amount?: number;    // NEW
+  credit_amount?: number;   // NEW
+  sort_order?: number;
 }
 
 // Body for PUT /invoices/{id}/items/{item_id}/ — matches InvoiceItemUpdateSerializer
