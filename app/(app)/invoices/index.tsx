@@ -284,7 +284,7 @@ export default function InvoicesScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={styles.chipsScroll}
+          style={[styles.chipsScroll, { marginBottom: 8 }]}
           contentContainerStyle={styles.chipsRow}
         >
           {companies.map((c: Company) => {
@@ -299,7 +299,10 @@ export default function InvoicesScreen() {
                   setPage(1);
                 }}
               >
-                <Text style={[styles.companyChipText, active && styles.companyChipTextActive]}>
+                <Text
+                  style={[styles.companyChipText, active && styles.companyChipTextActive]}
+                  numberOfLines={1}
+                >
                   {c.name}
                 </Text>
               </TouchableOpacity>
@@ -329,7 +332,10 @@ export default function InvoicesScreen() {
                 setPage(1);
               }}
             >
-              <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
+              <Text
+                style={[styles.filterChipText, active && styles.filterChipTextActive]}
+                numberOfLines={1}
+              >
                 {s.label}
               </Text>
             </TouchableOpacity>
@@ -610,8 +616,10 @@ const styles = StyleSheet.create({
   },
   createBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
-  chipsScroll: { flexGrow: 0, height: 48 },
-  chipsRow: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
+  // UPDATED: taller, self-sizing chip rows with breathing room instead of a
+  // fixed 48px height that was cramming the company/status pills together.
+  chipsScroll: { flexGrow: 0, minHeight: 44 },
+  chipsRow: { paddingHorizontal: 16, gap: 8, alignItems: 'center', paddingVertical: 4 },
 
   // Animated metrics strip
   metricsStrip: {
@@ -642,17 +650,24 @@ const styles = StyleSheet.create({
   toolBtnText: { color: NAVY, fontWeight: '700', fontSize: 13 },
   singleCompany: { paddingHorizontal: 16, paddingVertical: 6, fontSize: 13, color: SLATE, fontWeight: '600' },
 
+  // UPDATED: bigger padding + centered content so the company name always
+  // has room and never looks clipped inside the pill.
   companyChip: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999,
     backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
   },
   companyChipActive: { backgroundColor: NAVY, borderColor: NAVY },
-  companyChipText: { fontSize: 13, color: SLATE, fontWeight: '600' },
+  // UPDATED: flexShrink: 0 so the label is never squeezed/wrapped by the pill.
+  companyChipText: { fontSize: 13, color: SLATE, fontWeight: '600', flexShrink: 0 },
   companyChipTextActive: { color: '#fff' },
 
+  // UPDATED: matched vertical padding with companyChip so both chip rows
+  // share the same height and line up cleanly.
   filterChip: {
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
     backgroundColor: '#fff', borderWidth: 1, borderColor: BORDER,
+    alignItems: 'center', justifyContent: 'center',
   },
   filterChipActive: { backgroundColor: '#eef2f7', borderColor: NAVY },
   filterChipText: { fontSize: 13, color: SLATE, fontWeight: '500' },

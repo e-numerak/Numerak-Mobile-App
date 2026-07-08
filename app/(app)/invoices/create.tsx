@@ -114,7 +114,7 @@ const VAT_RATE_MAP: Record<VatRateType, number> = { standard: 5, zero: 0, exempt
 const LIMIT = {
   location: 200, itemName: 120, description: 500, unit: 20,
   qty: 12, price: 14, permit: 50, txnId: 50, po: 50, gl: 50, discount: 14, notes: 1000,
-  taxCode: 5, debit: 14, credit: 14,
+  taxCode: 5, debit: 14, credit: 14, originalInvoice: 50,
 };
 // Reference/ID fields: letters, numbers and a few safe separators only.
 const REF_RE = /^[A-Za-z0-9\-_/.#&() ]*$/;
@@ -123,7 +123,7 @@ const STEPS = [
   { key: 'info', label: 'Your Info', sub: 'Your company (seller) details', icon: 'briefcase' },
   { key: 'buyer', label: 'Buyer', sub: 'Select the customer being invoiced', icon: 'user' },
   { key: 'items', label: 'Product Catalog', sub: 'Products & services', icon: 'package' },
-  { key: 'details', label: 'Details', sub: 'Dates, references & currency', icon: 'file-text' },
+  { key: 'details', label: 'Payment and Details', sub: 'Dates, references & currency', icon: 'file-text' },
   { key: 'qr', label: 'Print Code', sub: 'Scan-to-verify QR code', icon: 'grid' },
   { key: 'review', label: 'Review', sub: 'Confirm & create', icon: 'check-circle' },
 ] as const;
@@ -162,6 +162,12 @@ export default function CreateInvoiceScreen() {
   const params = useLocalSearchParams<{ companyId?: string; typeKey?: string }>();
   const insets = useSafeAreaInsets();
   const selectedType = params.typeKey ? INVOICE_TYPE_INDEX[params.typeKey] : undefined;
+
+  // Credit Note / Debit Note both need an "Original Invoice Number" reference
+  // (checked by `key`, since both currently share invoiceType: 'tax_invoice').
+  const isCreditOrDebitNote =
+    selectedType?.key === 'credit_note' || selectedType?.key === 'debit_note';
+
   const { data: companies } = useCompanies();
   const { mutateAsync: createInvoice, isPending } = useCreateInvoice();
 
@@ -194,6 +200,8 @@ export default function CreateInvoiceScreen() {
   const [currency, setCurrency] = useState<Currency>('AED');
   const [discountAmount, setDiscountAmount] = useState('');
   const [notes, setNotes] = useState('');
+  // NEW — only used/required for Credit Note & Debit Note
+  const [originalInvoiceNumber, setOriginalInvoiceNumber] = useState('');
 
   const invoiceNo = useMemo(invoiceNumberPreview, []);
 
@@ -222,18 +230,18 @@ export default function CreateInvoiceScreen() {
     label: `${p.name}${p.unit_price ? ` — ${p.unit_price}` : ''}`,
   }));
   function applyProduct(idx: number, productId: string) {
-  const p = productList.find((x) => x.id === productId);
-  if (!p) return;
-  updateItem(idx, {
-    item_name: p.name ?? '',
-    product_reference: (p as any).product_reference ?? "",
-    description: p.description || p.name || '',
-    unit_price: String(p.unit_price ?? ''),
-    unit: p.unit ?? '',
-    vat_rate_type: (p.vat_rate_type as VatRateType) ?? 'standard',
-    tax_code: (p as any).tax_code ?? '',   // NEW — agar backend product model mein hai
-  });
-}
+    const p = productList.find((x) => x.id === productId);
+    if (!p) return;
+    updateItem(idx, {
+      item_name: p.name ?? '',
+      product_reference: (p as any).product_reference ?? "",
+      description: p.description || p.name || '',
+      unit_price: String(p.unit_price ?? ''),
+      unit: p.unit ?? '',
+      vat_rate_type: (p.vat_rate_type as VatRateType) ?? 'standard',
+      tax_code: (p as any).tax_code ?? '',   // NEW — agar backend product model mein hai
+    });
+  }
 
   // Prefill supplier location from the company, once
   useEffect(() => {
@@ -271,6 +279,8 @@ export default function CreateInvoiceScreen() {
     checkRef(transactionId, 'txnId', 'Transaction ID');
     checkRef(purchaseOrderNumber, 'po', 'Purchase Order Number');
     checkRef(glAccountId, 'gl', 'GL / Account ID', true);
+    // NEW — only required when the invoice type is Credit Note / Debit Note
+    checkRef(originalInvoiceNumber, 'originalInvoice', 'Original Invoice Number', isCreditOrDebitNote);
 
     if (discountAmount.trim()) {
       const d = Number(discountAmount);
@@ -279,7 +289,7 @@ export default function CreateInvoiceScreen() {
       else if (subtotal > 0 && d > subtotal) e.discount = 'Discount cannot exceed the subtotal.';
     }
     return e;
-  }, [permitNumber, transactionId, purchaseOrderNumber, glAccountId, discountAmount, subtotal]);
+  }, [permitNumber, transactionId, purchaseOrderNumber, glAccountId, discountAmount, subtotal, originalInvoiceNumber, isCreditOrDebitNote]);
 
   function updateItem(idx: number, patch: Partial<FormItem>) {
     setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
@@ -296,7 +306,7 @@ export default function CreateInvoiceScreen() {
   const buildSnapshot = () => ({
     supplierLocation, arType, transactionType, paymentMeansCode, customerId, customerLocation,
     items, issueDate, dueDate, supplyDate, taxPaymentDate, permitNumber, transactionId,
-    purchaseOrderNumber, glAccountId, currency, discountAmount, notes,
+    purchaseOrderNumber, glAccountId, currency, discountAmount, notes, originalInvoiceNumber,
   });
   function hydrate(p: any) {
     if (!p) return;
@@ -318,6 +328,7 @@ export default function CreateInvoiceScreen() {
     if (p.currency) setCurrency(p.currency);
     if (p.discountAmount != null) setDiscountAmount(p.discountAmount);
     if (p.notes != null) setNotes(p.notes);
+    if (p.originalInvoiceNumber != null) setOriginalInvoiceNumber(p.originalInvoiceNumber);
   }
 
   useEffect(() => {
@@ -353,7 +364,7 @@ export default function CreateInvoiceScreen() {
     companyId, draftChecked, restorePayload, hasContent,
     supplierLocation, arType, transactionType, paymentMeansCode, customerId, customerLocation,
     items, issueDate, dueDate, supplyDate, taxPaymentDate, permitNumber, transactionId,
-    purchaseOrderNumber, glAccountId, currency, discountAmount, notes,
+    purchaseOrderNumber, glAccountId, currency, discountAmount, notes, originalInvoiceNumber,
   ]);
 
   // ── Step validation (only the fields the web marks required) ────────────────
@@ -368,31 +379,35 @@ export default function CreateInvoiceScreen() {
       if (!customerLocation.trim()) { Alert.alert('Required', 'Customer Location is required.'); return false; }
     }
 
-  if (s === 2) {
-  const anyValid = items.some(
-    (it) => it.item_name.trim() && it.product_reference.trim() && it.description.trim()
-      && it.unit.trim() && it.tax_code.trim()
-      && parseFloat(it.quantity) > 0 && parseFloat(it.unit_price) >= 0
-  );
-  if (!anyValid) { Alert.alert('Items required', 'Add at least one complete line item.'); return false; }
+    if (s === 2) {
+      const errors: string[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (!it.item_name.trim()) errors.push(`Item ${i + 1}: Name required`);
+        if (!it.product_reference.trim()) errors.push(`Item ${i + 1}: Reference required`);
+        if (!it.description.trim()) errors.push(`Item ${i + 1}: Description required`);
+        if (!it.unit.trim()) errors.push(`Item ${i + 1}: Unit required`);
+        if (!(parseFloat(it.quantity) > 0)) errors.push(`Item ${i + 1}: Valid quantity required`);
+        if (!(parseFloat(it.unit_price) >= 0)) errors.push(`Item ${i + 1}: Valid price required`);
+        if (!it.debit_amount.trim()) errors.push(`Item ${i + 1}: Debit Amount required`);
+        if (!it.credit_amount.trim()) errors.push(`Item ${i + 1}: Credit Amount required`);
+      }
+      if (errors.length > 0) {
+        Alert.alert('Please fix these fields', errors.join('\n'));
+        return false;
+      }
+    }
 
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    if (!it.item_name.trim()) { Alert.alert('Check item ' + (i + 1), 'Item / Service Name is required.'); return false; }
-    if (!it.product_reference.trim()) { Alert.alert('Check item ' + (i + 1), 'Product / Service Reference is required.'); return false; }
-    if (!it.description.trim()) { Alert.alert('Check item ' + (i + 1), 'Description is required.'); return false; }
-    if (!it.unit.trim()) { Alert.alert('Check item ' + (i + 1), 'Unit is required.'); return false; }
-    if (it.quantity.trim() && !(parseFloat(it.quantity) > 0)) { Alert.alert('Check item ' + (i + 1), 'Quantity must be greater than 0.'); return false; }
-    if (it.unit_price.trim() && !(parseFloat(it.unit_price) >= 0)) { Alert.alert('Check item ' + (i + 1), 'Unit price must be 0 or more.'); return false; }
-    if (!it.debit_amount.trim() || !(parseFloat(it.debit_amount) >= 0)) { Alert.alert('Check item ' + (i + 1), 'Debit Amount is required.'); return false; }
-    if (!it.credit_amount.trim() || !(parseFloat(it.credit_amount) >= 0)) { Alert.alert('Check item ' + (i + 1), 'Credit Amount is required.'); return false; }
-  }
-}
-  if (s === 3) {
+    if (s === 3) {
       if (!issueDate.trim()) { Alert.alert('Required', 'Issue Date is required.'); return false; }
       // Date order sanity
       if (dueDate.trim() && dueDate < issueDate) {
         Alert.alert('Check dates', 'Due Date cannot be earlier than the Issue Date.'); return false;
+      }
+      // NEW — Credit Note / Debit Note must reference the original invoice
+      if (isCreditOrDebitNote && !originalInvoiceNumber.trim()) {
+        Alert.alert('Required', 'Original Invoice Number is required for Credit/Debit Notes.');
+        return false;
       }
       const keys = Object.keys(detailErrors);
       if (keys.length > 0) {
@@ -425,6 +440,7 @@ export default function CreateInvoiceScreen() {
     setCurrency('AED');
     setDiscountAmount('');
     setNotes('');
+    setOriginalInvoiceNumber('');   // NEW
     setAutoStatus('idle');
     setSupplierLocation(selectedCompany?.formatted_address ?? '');
   }
@@ -443,19 +459,19 @@ export default function CreateInvoiceScreen() {
       if (!(qty > 0)) { setStep(2); Alert.alert('Item error', `Item #${i + 1}: quantity must be greater than 0.`); return; }
       const price = parseFloat(it.unit_price);
       if (!(price >= 0)) { setStep(2); Alert.alert('Item error', `Item #${i + 1}: unit price cannot be negative.`); return; }
-            validItems.push({
-            item_name: it.item_name.trim() || undefined,
-            product_reference: it.product_reference.trim(),
-            description: it.description.trim(),
-            quantity: qty,
-            unit: it.unit.trim() || undefined,
-            unit_price: price,
-            vat_rate_type: it.vat_rate_type,
-            tax_code: it.tax_code.trim(),               // NEW
-            debit_amount: parseFloat(it.debit_amount) || 0,   // NEW
-            credit_amount: parseFloat(it.credit_amount) || 0, // NEW
-            sort_order: i,
-          });
+      validItems.push({
+        item_name: it.item_name.trim() || undefined,
+        product_reference: it.product_reference.trim(),
+        description: it.description.trim(),
+        quantity: qty,
+        unit: it.unit.trim() || undefined,
+        unit_price: price,
+        vat_rate_type: it.vat_rate_type,
+        tax_code: it.tax_code.trim(),               // NEW
+        debit_amount: parseFloat(it.debit_amount) || 0,   // NEW
+        credit_amount: parseFloat(it.credit_amount) || 0, // NEW
+        sort_order: i,
+      });
     }
     if (validItems.length === 0) { setStep(2); Alert.alert('Items required', 'Add at least one line item.'); return; }
 
@@ -474,6 +490,10 @@ export default function CreateInvoiceScreen() {
     if (discount > 0) payload.discount_amount = discount;
     if (purchaseOrderNumber.trim()) payload.purchase_order_number = purchaseOrderNumber.trim();
     if (notes.trim()) payload.notes = notes.trim();
+    // NEW — only sent for Credit Note / Debit Note
+    if (isCreditOrDebitNote && originalInvoiceNumber.trim()) {
+      payload.reference_number = originalInvoiceNumber.trim();
+    }
 
     try {
       const created = await createInvoice(payload);
@@ -766,6 +786,30 @@ export default function CreateInvoiceScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Document References</Text>
+
+              {/* NEW — Original Invoice Number, only for Credit Note / Debit Note.
+                  Sits above Invoice Number so it's the first thing the user
+                  sees, matching the web's "required for Credit Notes" banner. */}
+              {isCreditOrDebitNote && (
+                <View style={styles.originalInvoiceBanner}>
+                  <View style={styles.originalInvoiceBannerHead}>
+                    <Feather name="alert-triangle" size={13} color="#b45309" />
+                    <Text style={styles.originalInvoiceBannerTitle}>
+                      Original Invoice Reference — required for {selectedType?.title ?? 'this document'}
+                    </Text>
+                  </View>
+                  <TextField
+                    label="Original Invoice Number"
+                    required
+                    value={originalInvoiceNumber}
+                    onChange={setOriginalInvoiceNumber}
+                    placeholder="e.g. INV-202604-000001"
+                    maxLength={LIMIT.originalInvoice}
+                    error={detailErrors.originalInvoice}
+                  />
+                </View>
+              )}
+
               <View style={styles.field}>
                 <Text style={styles.label}>Invoice Number</Text>
                 <View style={styles.readonlyInput}>
@@ -820,6 +864,9 @@ export default function CreateInvoiceScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Review</Text>
               <ReviewRow label="Invoice #" value={invoiceNo} />
+              {isCreditOrDebitNote && (
+                <ReviewRow label="Original Invoice #" value={originalInvoiceNumber || '—'} />
+              )}
               <ReviewRow label="Supplier" value={selectedCompany?.name ?? '—'} />
               <ReviewRow label="Supplier location" value={supplierLocation || '—'} />
               <ReviewRow label="AR / AP" value={AR_AP_OPTIONS.find((o) => o.value === arType)?.label ?? '—'} />
@@ -1076,10 +1123,10 @@ const styles = StyleSheet.create({
   companyName: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
   companySub: { fontSize: 12, color: SLATE, marginTop: 2 },
 
-  field: { marginBottom: 14 },
-  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 6 },
-  counter: { fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6 },
+  field: { marginBottom: 16 },
+  labelRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap' },
+  label: { fontSize: 13, fontWeight: '600', color: '#334155', marginBottom: 6, flexShrink: 1, marginRight: 6 },
+  counter: { fontSize: 11, fontWeight: '700', color: '#94a3b8', marginBottom: 6, flexShrink: 0 },
   counterMax: { color: ERROR },
   req: { color: ERROR, fontWeight: '700' },
   input: { borderWidth: 1.5, borderColor: BORDER, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, backgroundColor: '#f9fafc', color: '#0f172a' },
@@ -1087,7 +1134,7 @@ const styles = StyleSheet.create({
   errRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
   errText: { fontSize: 12, color: ERROR, fontWeight: '600', flex: 1 },
   inputMultiline: { minHeight: 70, textAlignVertical: 'top' },
-  row2: { flexDirection: 'row', gap: 12 },
+  row2: { flexDirection: 'row', gap: 16 },
   col: { flex: 1 },
 
   readonlyInput: { borderWidth: 1.5, borderColor: BORDER, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#f1f5f9', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -1101,6 +1148,14 @@ const styles = StyleSheet.create({
   selectPlaceholder: { fontSize: 14, color: '#94a3b8' },
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
   hintText: { fontSize: 12, color: '#b45309', fontWeight: '600' },
+
+  // NEW — Original Invoice Number banner (Credit Note / Debit Note only)
+  originalInvoiceBanner: {
+    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fcd34d',
+    borderRadius: 12, padding: 14, marginBottom: 16,
+  },
+  originalInvoiceBannerHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
+  originalInvoiceBannerTitle: { fontSize: 12.5, fontWeight: '700', color: '#b45309', flex: 1, flexWrap: 'wrap' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.65)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 12, maxHeight: '70%' },
