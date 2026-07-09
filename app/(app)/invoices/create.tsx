@@ -45,9 +45,6 @@ const BG = '#f6f8fb';
 const ERROR = '#dc2626';
 const GREEN = '#16a34a';
 
-
-// Lets any Select/Date picker tell the screen a bottom sheet is open,
-// so the fixed footer (Back/Next) can be hidden while it's showing.
 const PickerCtx = createContext<(open: boolean) => void>(() => {});
 
 type Opt<T extends string> = { value: T; label: string };
@@ -110,13 +107,11 @@ const VAT_RATE_TYPES: Opt<VatRateType>[] = [
 ];
 const VAT_RATE_MAP: Record<VatRateType, number> = { standard: 5, zero: 0, exempt: 0, out_of_scope: 0 };
 
-// Character limits per field (enforced on the input + surfaced as a counter)
 const LIMIT = {
   location: 200, itemName: 120, description: 500, unit: 20,
   qty: 12, price: 14, permit: 50, txnId: 50, po: 50, gl: 50, discount: 14, notes: 1000,
   taxCode: 5, debit: 14, credit: 14, originalInvoice: 50,
 };
-// Reference/ID fields: letters, numbers and a few safe separators only.
 const REF_RE = /^[A-Za-z0-9\-_/.#&() ]*$/;
 
 const STEPS = [
@@ -136,14 +131,14 @@ interface FormItem {
   unit: string;
   unit_price: string;
   vat_rate_type: VatRateType;
-  tax_code: string;        // NEW
-  debit_amount: string;    // NEW
-  credit_amount: string;   // NEW
+  tax_code: string;
+  debit_amount: string;
+  credit_amount: string;
 }
 const emptyItem = (): FormItem => ({
   item_name: '', product_reference: '', description: '', quantity: '1', unit: '',
   unit_price: '', vat_rate_type: 'standard',
-  tax_code: '', debit_amount: '', credit_amount: '',   // NEW
+  tax_code: '', debit_amount: '', credit_amount: '',
 });
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -163,8 +158,6 @@ export default function CreateInvoiceScreen() {
   const insets = useSafeAreaInsets();
   const selectedType = params.typeKey ? INVOICE_TYPE_INDEX[params.typeKey] : undefined;
 
-  // Credit Note / Debit Note both need an "Original Invoice Number" reference
-  // (checked by `key`, since both currently share invoiceType: 'tax_invoice').
   const isCreditOrDebitNote =
     selectedType?.key === 'credit_note' || selectedType?.key === 'debit_note';
 
@@ -200,7 +193,6 @@ export default function CreateInvoiceScreen() {
   const [currency, setCurrency] = useState<Currency>('AED');
   const [discountAmount, setDiscountAmount] = useState('');
   const [notes, setNotes] = useState('');
-  // NEW — only used/required for Credit Note & Debit Note
   const [originalInvoiceNumber, setOriginalInvoiceNumber] = useState('');
 
   const invoiceNo = useMemo(invoiceNumberPreview, []);
@@ -209,10 +201,8 @@ export default function CreateInvoiceScreen() {
     if (!companyId && companies && companies.length > 0) setCompanyId(companies[0].id);
   }, [companies, companyId]);
 
-  // Apply the transaction-type default implied by the chosen invoice type.
   useEffect(() => {
     if (selectedType?.transactionType) setTransactionType(selectedType.transactionType);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.typeKey]);
 
   const { data: customerData } = useCustomers({ company_id: companyId });
@@ -222,7 +212,6 @@ export default function CreateInvoiceScreen() {
   const selectedCompany = companies?.find((c) => c.id === companyId);
   const selectedCustomer = customers.find((c) => c.id === customerId);
 
-  // Product catalog (for line-item auto-fill)
   const { data: products } = useProducts(companyId);
   const productList = Array.isArray(products) ? products : [];
   const productOptions: Opt<string>[] = productList.map((p) => ({
@@ -234,29 +223,25 @@ export default function CreateInvoiceScreen() {
     if (!p) return;
     updateItem(idx, {
       item_name: p.name ?? '',
-      product_reference: (p as any).product_reference ?? "",
+      product_reference: (p as any).product_reference ?? '',
       description: p.description || p.name || '',
       unit_price: String(p.unit_price ?? ''),
       unit: p.unit ?? '',
       vat_rate_type: (p.vat_rate_type as VatRateType) ?? 'standard',
-      tax_code: (p as any).tax_code ?? '',   // NEW — agar backend product model mein hai
+      tax_code: (p as any).tax_code ?? '',
     });
   }
 
-  // Prefill supplier location from the company, once
   useEffect(() => {
     if (selectedCompany && !supplierLocation) {
       setSupplierLocation(selectedCompany.formatted_address ?? '');
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCompany]);
-  // Prefill customer location when a customer is picked
+
   useEffect(() => {
     if (selectedCustomer) setCustomerLocation((selectedCustomer as any).formatted_address ?? '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
 
-  // Live totals
   const discount = parseFloat(discountAmount) || 0;
   const lineCalcs = items.map((it) => {
     const net = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_price) || 0);
@@ -267,19 +252,22 @@ export default function CreateInvoiceScreen() {
   const totalVat = lineCalcs.reduce((s, l) => s + l.vat, 0);
   const grandTotal = taxable + totalVat;
 
-  // ── Step 4 (Details) — live field validation ────────────────────────────────
+  // ── Step 4 live validation ─────────────────────────────────────────────────
   const detailErrors = useMemo(() => {
     const e: Record<string, string> = {};
     const checkRef = (val: string, key: string, label: string, required?: boolean) => {
       const v = val.trim();
-      if (!v) { if (required) e[key] = `${label} is required.`; return; }
+      if (!v) {
+        if (required) e[key] = `${label} is required.`;
+        return;
+      }
       if (!REF_RE.test(v)) e[key] = 'Only letters, numbers and - _ / . # & ( ) are allowed.';
     };
-    checkRef(permitNumber, 'permit', 'Permit Number');
-    checkRef(transactionId, 'txnId', 'Transaction ID');
-    checkRef(purchaseOrderNumber, 'po', 'Purchase Order Number');
-    checkRef(glAccountId, 'gl', 'GL / Account ID', true);
-    // NEW — only required when the invoice type is Credit Note / Debit Note
+    // ── All three are now required ──
+    checkRef(permitNumber,       'permit', 'Permit Number',          true);
+    checkRef(transactionId,      'txnId',  'Transaction ID',         true);
+    checkRef(purchaseOrderNumber,'po',     'Purchase Order Number',  true);
+    checkRef(glAccountId,        'gl',     'GL / Account ID',        true);
     checkRef(originalInvoiceNumber, 'originalInvoice', 'Original Invoice Number', isCreditOrDebitNote);
 
     if (discountAmount.trim()) {
@@ -308,6 +296,7 @@ export default function CreateInvoiceScreen() {
     items, issueDate, dueDate, supplyDate, taxPaymentDate, permitNumber, transactionId,
     purchaseOrderNumber, glAccountId, currency, discountAmount, notes, originalInvoiceNumber,
   });
+
   function hydrate(p: any) {
     if (!p) return;
     if (p.supplierLocation != null) setSupplierLocation(p.supplierLocation);
@@ -359,7 +348,6 @@ export default function CreateInvoiceScreen() {
         .catch(() => setAutoStatus('idle'));
     }, 1500);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     companyId, draftChecked, restorePayload, hasContent,
     supplierLocation, arType, transactionType, paymentMeansCode, customerId, customerLocation,
@@ -367,7 +355,7 @@ export default function CreateInvoiceScreen() {
     purchaseOrderNumber, glAccountId, currency, discountAmount, notes, originalInvoiceNumber,
   ]);
 
-  // ── Step validation (only the fields the web marks required) ────────────────
+  // ── Step validation ────────────────────────────────────────────────────────
   function validateStep(s: number): boolean {
     if (s === 0) {
       if (!companyId) { Alert.alert('Company required', 'Please select a company.'); return false; }
@@ -378,7 +366,6 @@ export default function CreateInvoiceScreen() {
       if (!customerId) { Alert.alert('Required', 'Please select a customer (buyer).'); return false; }
       if (!customerLocation.trim()) { Alert.alert('Required', 'Customer Location is required.'); return false; }
     }
-
     if (s === 2) {
       const errors: string[] = [];
       for (let i = 0; i < items.length; i++) {
@@ -397,17 +384,34 @@ export default function CreateInvoiceScreen() {
         return false;
       }
     }
-
     if (s === 3) {
-      if (!issueDate.trim()) { Alert.alert('Required', 'Issue Date is required.'); return false; }
-      // Date order sanity
+      if (!issueDate.trim()) {
+        Alert.alert('Required', 'Issue Date is required.'); return false;
+      }
       if (dueDate.trim() && dueDate < issueDate) {
         Alert.alert('Check dates', 'Due Date cannot be earlier than the Issue Date.'); return false;
       }
-      // NEW — Credit Note / Debit Note must reference the original invoice
+      // ── NEW: Permit Number, Transaction ID, Purchase Order Number all required ──
+      if (!permitNumber.trim()) {
+        Alert.alert('Required', 'Permit Number is required for audit compliance.'); return false;
+      }
+      if (!REF_RE.test(permitNumber.trim())) {
+        Alert.alert('Invalid Permit Number', 'Only letters, numbers and - _ / . # & ( ) are allowed.'); return false;
+      }
+      if (!transactionId.trim()) {
+        Alert.alert('Required', 'Transaction ID is required for audit compliance.'); return false;
+      }
+      if (!REF_RE.test(transactionId.trim())) {
+        Alert.alert('Invalid Transaction ID', 'Only letters, numbers and - _ / . # & ( ) are allowed.'); return false;
+      }
+      if (!purchaseOrderNumber.trim()) {
+        Alert.alert('Required', 'Purchase Order Number is required for audit compliance.'); return false;
+      }
+      if (!REF_RE.test(purchaseOrderNumber.trim())) {
+        Alert.alert('Invalid Purchase Order Number', 'Only letters, numbers and - _ / . # & ( ) are allowed.'); return false;
+      }
       if (isCreditOrDebitNote && !originalInvoiceNumber.trim()) {
-        Alert.alert('Required', 'Original Invoice Number is required for Credit/Debit Notes.');
-        return false;
+        Alert.alert('Required', 'Original Invoice Number is required for Credit/Debit Notes.'); return false;
       }
       const keys = Object.keys(detailErrors);
       if (keys.length > 0) {
@@ -416,11 +420,10 @@ export default function CreateInvoiceScreen() {
     }
     return true;
   }
+
   const goNext = () => { if (validateStep(step)) setStep((s) => Math.min(s + 1, STEPS.length - 1)); };
   const goBack = () => { if (step === 0) router.back(); else setStep((s) => s - 1); };
 
-  // Reset the whole wizard to a clean state (this screen stays mounted in the
-  // drawer, so without this a second visit would still show the last invoice).
   function resetForm() {
     setStep(0);
     setArType('');
@@ -440,14 +443,14 @@ export default function CreateInvoiceScreen() {
     setCurrency('AED');
     setDiscountAmount('');
     setNotes('');
-    setOriginalInvoiceNumber('');   // NEW
+    setOriginalInvoiceNumber('');
     setAutoStatus('idle');
     setSupplierLocation(selectedCompany?.formatted_address ?? '');
   }
 
   // ── Submit ─────────────────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (isPending) return; // guard against a double tap
+    if (isPending) return;
     for (let s = 0; s <= 3; s++) if (!validateStep(s)) { setStep(s); return; }
 
     const validItems: InlineInvoiceItemPayload[] = [];
@@ -467,9 +470,9 @@ export default function CreateInvoiceScreen() {
         unit: it.unit.trim() || undefined,
         unit_price: price,
         vat_rate_type: it.vat_rate_type,
-        tax_code: it.tax_code.trim(),               // NEW
-        debit_amount: parseFloat(it.debit_amount) || 0,   // NEW
-        credit_amount: parseFloat(it.credit_amount) || 0, // NEW
+        tax_code: it.tax_code.trim(),
+        debit_amount: parseFloat(it.debit_amount) || 0,
+        credit_amount: parseFloat(it.credit_amount) || 0,
         sort_order: i,
       });
     }
@@ -490,7 +493,6 @@ export default function CreateInvoiceScreen() {
     if (discount > 0) payload.discount_amount = discount;
     if (purchaseOrderNumber.trim()) payload.purchase_order_number = purchaseOrderNumber.trim();
     if (notes.trim()) payload.notes = notes.trim();
-    // NEW — only sent for Credit Note / Debit Note
     if (isCreditOrDebitNote && originalInvoiceNumber.trim()) {
       payload.reference_number = originalInvoiceNumber.trim();
     }
@@ -498,7 +500,7 @@ export default function CreateInvoiceScreen() {
     try {
       const created = await createInvoice(payload);
       deleteDraftAutosave(companyId, FORM_TYPE).catch(() => {});
-      resetForm(); // clear the wizard so the next visit starts fresh
+      resetForm();
       if (created?.id) router.replace(`/invoices/${created.id}` as any);
       else router.replace('/invoices' as any);
     } catch (err: any) {
@@ -522,406 +524,432 @@ export default function CreateInvoiceScreen() {
 
   return (
     <PickerCtx.Provider value={setPickerOpen}>
-    <View style={styles.screen}>
-      <Stack.Screen options={{ title: 'Create Invoice' }} />
+      <View style={styles.screen}>
+        <Stack.Screen options={{ title: 'Create Invoice' }} />
 
-      {/* Header stepper */}
-      <View style={styles.stepperCard}>
-        <View style={styles.stepsWrap}>
-          <View style={styles.stepsLineBg} />
-          <View style={[styles.stepsLineFill, { width: `${(step / (STEPS.length - 1)) * 100}%` }]} />
-          <View style={styles.stepsRow}>
-            {STEPS.map((s, i) => {
-              const done = i < step;
-              const active = i === step;
-              return (
-                <View key={s.key} style={[styles.dot, done && styles.dotDone, active && styles.dotActive]}>
-                  {done ? (
-                    <Feather name="check" size={12} color="#fff" />
-                  ) : (
-                    <Text style={[styles.dotNum, active && styles.dotNumActive]}>{i + 1}</Text>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </View>
-        <View style={styles.stepHeadRow}>
-          <View style={styles.stepHeadIcon}>
-            <Feather name={STEPS[step].icon as any} size={16} color="#fff" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.stepHeadTitle}>{STEPS[step].label}</Text>
-            <Text style={styles.stepHeadSub}>Step {step + 1} of {STEPS.length} · {STEPS[step].sub}</Text>
-          </View>
-        </View>
-      </View>
-
-      <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" bottomOffset={40}>
-        {restorePayload && step === 0 && (
-          <View style={styles.restoreBanner}>
-            <Feather name="rotate-ccw" size={18} color="#1d4ed8" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.restoreTitle}>Resume your unsaved invoice?</Text>
-              <Text style={styles.restoreSub}>A draft you started earlier was found.</Text>
-            </View>
-            <View style={styles.restoreActions}>
-              <TouchableOpacity onPress={() => { hydrate(restorePayload); setRestorePayload(null); }}>
-                <Text style={styles.restoreRestore}>Restore</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => { setRestorePayload(null); if (companyId) deleteDraftAutosave(companyId, FORM_TYPE).catch(() => {}); }}>
-                <Text style={styles.restoreDiscard}>Discard</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {autoStatus !== 'idle' && !restorePayload && (
-          <View style={styles.autoStatusRow}>
-            <Feather name={autoStatus === 'saving' ? 'upload-cloud' : 'check-circle'} size={13} color={autoStatus === 'saving' ? SLATE : GREEN} />
-            <Text style={styles.autoStatusText}>{autoStatus === 'saving' ? 'Saving draft…' : 'Draft autosaved'}</Text>
-          </View>
-        )}
-
-        {/* Selected document / supply type */}
-        {selectedType && (
-          <View style={styles.typeBanner}>
-            <View style={styles.typeBannerIcon}>
-              <Feather name={selectedType.icon} size={16} color="#fff" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.typeBannerTitle}>{selectedType.title}</Text>
-              <Text style={styles.typeBannerSub}>{selectedType.subtitle}</Text>
-            </View>
-            <View style={styles.typeBannerTags}>
-              <View style={styles.typeChip}><Text style={styles.typeChipText}>{selectedType.code}</Text></View>
-              <View style={styles.typeChip}><Text style={styles.typeChipText}>{selectedType.vat}</Text></View>
-            </View>
-          </View>
-        )}
-
-        {/* ══ Step 0 — Your Info ══ */}
-        {step === 0 && (
-          <View style={styles.card}>
-            {selectedCompany && (
-              <View style={styles.companyCard}>
-                <View style={styles.companyLogo}>
-                  <Text style={styles.companyLogoText}>{(selectedCompany.name || '?').slice(0, 2).toUpperCase()}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.companyName}>{selectedCompany.name}</Text>
-                  <Text style={styles.companySub}>TRN: {selectedCompany.trn}</Text>
-                </View>
-              </View>
-            )}
-            {companies && companies.length > 1 && (
-              <>
-                <Text style={styles.label}>Company</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 8 }}>
-                  {companies.map((c) => {
-                    const active = c.id === companyId;
-                    return (
-                      <TouchableOpacity key={c.id} style={[styles.chip, active && styles.chipActive]}
-                        onPress={() => { setCompanyId(c.id); setCustomerId(''); setSupplierLocation(c.formatted_address ?? ''); }}>
-                        <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.name}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            )}
-            <TextField label="Supplier Location" required value={supplierLocation}
-              onChange={setSupplierLocation} placeholder="e.g. Office 7, Dubai, UAE" maxLength={LIMIT.location} />
-            <SelectField label="Accounts Receivable / Payable" required value={arType}
-              options={AR_AP_OPTIONS} placeholder="— Select —" onChange={setArType}
-              hint="Required for audit file" />
-            <SelectField label="Transaction Type" value={transactionType}
-              options={TRANSACTION_TYPES} onChange={(v) => setTransactionType(v as TransactionType)} />
-            <SelectField label="Payment Method" value={paymentMeansCode}
-              options={PAYMENT_MEANS} onChange={(v) => setPaymentMeansCode(v as PaymentMeansCode)} />
-          </View>
-        )}
-
-        {/* ══ Step 1 — Buyer ══ */}
-        {step === 1 && (
-          <View style={styles.card}>
-            <SelectField label="Customer (Buyer)" required value={customerId} options={customerOptions}
-              placeholder={customers.length ? 'Select a customer…' : 'No customers — add one first'}
-              onChange={setCustomerId} />
-            <TextField label="Customer Location" required value={customerLocation}
-              onChange={setCustomerLocation} placeholder="e.g. Riyadh, Saudi Arabia" maxLength={LIMIT.location} />
-          </View>
-        )}
-
-        {/* ══ Step 2 — Line Items ══ */}
-        {step === 2 && (
-          <>
-            <View style={styles.card}>
-              {items.map((item, idx) => (
-                <View key={idx} style={styles.itemBox}>
-                  <View style={styles.itemHeader}>
-                    <Text style={styles.itemHeaderText}>ITEM #{idx + 1}</Text>
-                    {items.length > 1 && (
-                      <TouchableOpacity onPress={() => removeItem(idx)}>
-                        <Text style={styles.removeText}>Remove</Text>
-                      </TouchableOpacity>
+        {/* Header stepper */}
+        <View style={styles.stepperCard}>
+          <View style={styles.stepsWrap}>
+            <View style={styles.stepsLineBg} />
+            <View style={[styles.stepsLineFill, { width: `${(step / (STEPS.length - 1)) * 100}%` }]} />
+            <View style={styles.stepsRow}>
+              {STEPS.map((s, i) => {
+                const done = i < step;
+                const active = i === step;
+                return (
+                  <View key={s.key} style={[styles.dot, done && styles.dotDone, active && styles.dotActive]}>
+                    {done ? (
+                      <Feather name="check" size={12} color="#fff" />
+                    ) : (
+                      <Text style={[styles.dotNum, active && styles.dotNumActive]}>{i + 1}</Text>
                     )}
                   </View>
-                  {productOptions.length > 0 && (
-                    <SelectField
-                      label="Pick from catalog (optional)"
-                      value=""
-                      options={productOptions}
-                      placeholder="Select a saved product to auto-fill…"
-                      onChange={(pid) => applyProduct(idx, pid)}
+                );
+              })}
+            </View>
+          </View>
+          <View style={styles.stepHeadRow}>
+            <View style={styles.stepHeadIcon}>
+              <Feather name={STEPS[step].icon as any} size={16} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.stepHeadTitle}>{STEPS[step].label}</Text>
+              <Text style={styles.stepHeadSub}>Step {step + 1} of {STEPS.length} · {STEPS[step].sub}</Text>
+            </View>
+          </View>
+        </View>
+
+        <KeyboardAwareScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" bottomOffset={40}>
+          {restorePayload && step === 0 && (
+            <View style={styles.restoreBanner}>
+              <Feather name="rotate-ccw" size={18} color="#1d4ed8" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.restoreTitle}>Resume your unsaved invoice?</Text>
+                <Text style={styles.restoreSub}>A draft you started earlier was found.</Text>
+              </View>
+              <View style={styles.restoreActions}>
+                <TouchableOpacity onPress={() => { hydrate(restorePayload); setRestorePayload(null); }}>
+                  <Text style={styles.restoreRestore}>Restore</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setRestorePayload(null); if (companyId) deleteDraftAutosave(companyId, FORM_TYPE).catch(() => {}); }}>
+                  <Text style={styles.restoreDiscard}>Discard</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {autoStatus !== 'idle' && !restorePayload && (
+            <View style={styles.autoStatusRow}>
+              <Feather name={autoStatus === 'saving' ? 'upload-cloud' : 'check-circle'} size={13} color={autoStatus === 'saving' ? SLATE : GREEN} />
+              <Text style={styles.autoStatusText}>{autoStatus === 'saving' ? 'Saving draft…' : 'Draft autosaved'}</Text>
+            </View>
+          )}
+
+          {selectedType && (
+            <View style={styles.typeBanner}>
+              <View style={styles.typeBannerIcon}>
+                <Feather name={selectedType.icon} size={16} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.typeBannerTitle}>{selectedType.title}</Text>
+                <Text style={styles.typeBannerSub}>{selectedType.subtitle}</Text>
+              </View>
+              <View style={styles.typeBannerTags}>
+                <View style={styles.typeChip}><Text style={styles.typeChipText}>{selectedType.code}</Text></View>
+                <View style={styles.typeChip}><Text style={styles.typeChipText}>{selectedType.vat}</Text></View>
+              </View>
+            </View>
+          )}
+
+          {/* ══ Step 0 — Your Info ══ */}
+          {step === 0 && (
+            <View style={styles.card}>
+              {selectedCompany && (
+                <View style={styles.companyCard}>
+                  <View style={styles.companyLogo}>
+                    <Text style={styles.companyLogoText}>{(selectedCompany.name || '?').slice(0, 2).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.companyName}>{selectedCompany.name}</Text>
+                    <Text style={styles.companySub}>TRN: {selectedCompany.trn}</Text>
+                  </View>
+                </View>
+              )}
+              {companies && companies.length > 1 && (
+                <>
+                  <Text style={styles.label}>Company</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginBottom: 8 }}>
+                    {companies.map((c) => {
+                      const active = c.id === companyId;
+                      return (
+                        <TouchableOpacity key={c.id} style={[styles.chip, active && styles.chipActive]}
+                          onPress={() => { setCompanyId(c.id); setCustomerId(''); setSupplierLocation(c.formatted_address ?? ''); }}>
+                          <Text style={[styles.chipText, active && styles.chipTextActive]}>{c.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+              <TextField label="Supplier Location" required value={supplierLocation}
+                onChange={setSupplierLocation} placeholder="e.g. Office 7, Dubai, UAE" maxLength={LIMIT.location} />
+              <SelectField label="Accounts Receivable / Payable" required value={arType}
+                options={AR_AP_OPTIONS} placeholder="— Select —" onChange={setArType}
+                hint="Required for audit file" />
+              <SelectField label="Transaction Type" value={transactionType}
+                options={TRANSACTION_TYPES} onChange={(v) => setTransactionType(v as TransactionType)} />
+              <SelectField label="Payment Method" value={paymentMeansCode}
+                options={PAYMENT_MEANS} onChange={(v) => setPaymentMeansCode(v as PaymentMeansCode)} />
+            </View>
+          )}
+
+          {/* ══ Step 1 — Buyer ══ */}
+          {step === 1 && (
+            <View style={styles.card}>
+              <SelectField label="Customer (Buyer)" required value={customerId} options={customerOptions}
+                placeholder={customers.length ? 'Select a customer…' : 'No customers — add one first'}
+                onChange={setCustomerId} />
+              <TextField label="Customer Location" required value={customerLocation}
+                onChange={setCustomerLocation} placeholder="e.g. Riyadh, Saudi Arabia" maxLength={LIMIT.location} />
+            </View>
+          )}
+
+          {/* ══ Step 2 — Line Items ══ */}
+          {step === 2 && (
+            <>
+              <View style={styles.card}>
+                {items.map((item, idx) => (
+                  <View key={idx} style={styles.itemBox}>
+                    <View style={styles.itemHeader}>
+                      <Text style={styles.itemHeaderText}>ITEM #{idx + 1}</Text>
+                      {items.length > 1 && (
+                        <TouchableOpacity onPress={() => removeItem(idx)}>
+                          <Text style={styles.removeText}>Remove</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {productOptions.length > 0 && (
+                      <SelectField
+                        label="Pick from catalog (optional)"
+                        value=""
+                        options={productOptions}
+                        placeholder="Select a saved product to auto-fill…"
+                        onChange={(pid) => applyProduct(idx, pid)}
+                      />
+                    )}
+                    <TextField
+                      label="Item / Service Name" required value={item.item_name}
+                      onChange={(v) => updateItem(idx, { item_name: v })}
+                      placeholder="e.g. IT Consulting" maxLength={50}
+                      error={step === 2 && !item.item_name.trim() ? 'Item name is required.' : undefined}
                     />
-                  )}
-                  <TextField 
-                    label="Item / Service Name" 
-                    required 
-                    value={item.item_name}
-                    onChange={(v) => updateItem(idx, { item_name: v })} 
-                    placeholder="e.g. IT Consulting" 
-                    maxLength={50} 
-                    error={step === 2 && !item.item_name.trim() ? 'Item name is required.' : undefined} 
-                  />
-
-                  <TextField 
-                    label="Product / Service Reference" 
-                    required 
-                    value={item.product_reference}
-                    onChange={(v) => updateItem(idx, { product_reference: v })} 
-                    placeholder="e.g. SKU-001 or SVC-REF" 
-                    maxLength={50} 
-                    error={step === 2 && !item.product_reference.trim() ? 'Required' : undefined} 
-                  />
-
-                  <TextField 
-                    label="Description of Goods / Services" 
-                    required 
-                    value={item.description}
-                    onChange={(v) => updateItem(idx, { description: v })} 
-                    placeholder="Full description…" 
-                    maxLength={LIMIT.description} 
-                    error={step === 2 && !item.description.trim() ? 'Description is required.' : undefined} 
-                  />
-                  <View style={styles.row2}>
-                    <View style={styles.col}>
-                      <TextField label="Quantity" required value={item.quantity}
-                        onChange={(v) => updateItem(idx, { quantity: v.replace(/[^0-9.]/g, '') })} keyboardType="decimal-pad" placeholder="1"
-                        maxLength={LIMIT.qty}
-                        error={item.quantity.trim() && !(parseFloat(item.quantity) > 0) ? 'Must be greater than 0.' : undefined} />
+                    <TextField
+                      label="Product / Service Reference" required value={item.product_reference}
+                      onChange={(v) => updateItem(idx, { product_reference: v })}
+                      placeholder="e.g. SKU-001 or SVC-REF" maxLength={50}
+                      error={step === 2 && !item.product_reference.trim() ? 'Required' : undefined}
+                    />
+                    <TextField
+                      label="Description of Goods / Services" required value={item.description}
+                      onChange={(v) => updateItem(idx, { description: v })}
+                      placeholder="Full description…" maxLength={LIMIT.description}
+                      error={step === 2 && !item.description.trim() ? 'Description is required.' : undefined}
+                    />
+                    <View style={styles.row2}>
+                      <View style={styles.col}>
+                        <TextField label="Quantity" required value={item.quantity}
+                          onChange={(v) => updateItem(idx, { quantity: v.replace(/[^0-9.]/g, '') })}
+                          keyboardType="decimal-pad" placeholder="1" maxLength={LIMIT.qty}
+                          error={item.quantity.trim() && !(parseFloat(item.quantity) > 0) ? 'Must be greater than 0.' : undefined} />
+                      </View>
+                      <View style={styles.col}>
+                        <SelectField label="Unit" required value={item.unit}
+                          options={UNIT_OPTIONS} placeholder="— Select —"
+                          onChange={(v) => updateItem(idx, { unit: v })} />
+                      </View>
                     </View>
-                    <View style={styles.col}>
-                      <SelectField label="Unit" required value={item.unit}
-                       options={UNIT_OPTIONS} placeholder="— Select —"
-                        onChange={(v) => updateItem(idx, { unit: v })} />
+                    <View style={styles.row2}>
+                      <View style={styles.col}>
+                        <TextField label="Unit Price (excl. VAT)" required value={item.unit_price}
+                          onChange={(v) => updateItem(idx, { unit_price: v.replace(/[^0-9.]/g, '') })}
+                          keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.price}
+                          error={item.unit_price.trim() && !(parseFloat(item.unit_price) >= 0) ? 'Enter a valid price.' : undefined} />
+                      </View>
+                      <View style={styles.col}>
+                        <SelectField label="VAT Rate" value={item.vat_rate_type}
+                          options={VAT_RATE_TYPES} onChange={(v) => updateItem(idx, { vat_rate_type: v as VatRateType })} />
+                      </View>
                     </View>
-                  </View>
-                  <View style={styles.row2}>
-                    <View style={styles.col}>
-                      <TextField label="Unit Price (excl. VAT)" required value={item.unit_price}
-                        onChange={(v) => updateItem(idx, { unit_price: v.replace(/[^0-9.]/g, '') })} keyboardType="decimal-pad" placeholder="0.00"
-                        maxLength={LIMIT.price}
-                        error={item.unit_price.trim() && !(parseFloat(item.unit_price) >= 0) ? 'Enter a valid price.' : undefined} />
+                    <View style={styles.row2}>
+                      <View style={styles.col}>
+                        <SelectField label="Tax Code" value={item.tax_code}
+                          options={TAX_CODE_OPTIONS} placeholder="— Select —"
+                          onChange={(v) => updateItem(idx, { tax_code: v })} />
+                      </View>
                     </View>
-                    <View style={styles.col}>
-                      <SelectField label="VAT Rate" value={item.vat_rate_type}
-                        options={VAT_RATE_TYPES} onChange={(v) => updateItem(idx, { vat_rate_type: v as VatRateType })} />
+                    <View style={styles.row2}>
+                      <View style={styles.col}>
+                        <TextField label="Debit Amount (AED)" required value={item.debit_amount}
+                          onChange={(v) => updateItem(idx, { debit_amount: v.replace(/[^0-9.]/g, '') })}
+                          keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.debit}
+                          error={item.debit_amount.trim() && !(parseFloat(item.debit_amount) >= 0) ? 'Enter a valid amount.' : undefined} />
+                      </View>
+                      <View style={styles.col}>
+                        <TextField label="Credit Amount (AED)" required value={item.credit_amount}
+                          onChange={(v) => updateItem(idx, { credit_amount: v.replace(/[^0-9.]/g, '') })}
+                          keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.credit}
+                          error={item.credit_amount.trim() && !(parseFloat(item.credit_amount) >= 0) ? 'Enter a valid amount.' : undefined} />
+                      </View>
                     </View>
-                  </View>
-                  <View style={styles.row2}>
-                  <View style={styles.col}>
-                    <SelectField label="Tax Code" value={item.tax_code}
-                      options={TAX_CODE_OPTIONS} placeholder="— Select —"
-                      onChange={(v) => updateItem(idx, { tax_code: v })} />
-                  </View>
-                </View>
-                <View style={styles.row2}>
-                  <View style={styles.col}>
-                    <TextField label="Debit Amount (AED)" required value={item.debit_amount}
-                      onChange={(v) => updateItem(idx, { debit_amount: v.replace(/[^0-9.]/g, '') })}
-                      keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.debit}
-                      error={item.debit_amount.trim() && !(parseFloat(item.debit_amount) >= 0) ? 'Enter a valid amount.' : undefined} />
-                  </View>
-                  <View style={styles.col}>
-                    <TextField label="Credit Amount (AED)" required value={item.credit_amount}
-                      onChange={(v) => updateItem(idx, { credit_amount: v.replace(/[^0-9.]/g, '') })}
-                      keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.credit}
-                      error={item.credit_amount.trim() && !(parseFloat(item.credit_amount) >= 0) ? 'Enter a valid amount.' : undefined} />
-                  </View>
-                </View>
-                  <Text style={styles.itemTotal}>
-                    Line total: {money((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) * (1 + VAT_RATE_MAP[item.vat_rate_type] / 100))}
-                  </Text>
-                </View>
-              ))}
-              <TouchableOpacity style={styles.addItemBtn} onPress={addItem}>
-                <Feather name="plus" size={15} color={NAVY} />
-                <Text style={styles.addItemText}>Add Line Item</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.totalsCard}>
-              <TotalRow label="Subtotal" value={`${currency} ${money(subtotal)}`} />
-              <TotalRow label="VAT" value={`${currency} ${money(totalVat)}`} />
-              <TotalRow label="Total" value={`${currency} ${money(grandTotal)}`} grand />
-            </View>
-          </>
-        )}
-
-        {/* ══ Step 3 — Details ══ */}
-        {step === 3 && (
-          <>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Invoice Dates</Text>
-              <View style={styles.row2}>
-                <View style={styles.col}><DatePickerField label="Issue Date" required value={issueDate} onChange={setIssueDate} /></View>
-                <View style={styles.col}><DatePickerField label="Due Date" optional value={dueDate} onChange={setDueDate} /></View>
-              </View>
-              <View style={styles.row2}>
-                <View style={styles.col}><DatePickerField label="Date of Supply" optional value={supplyDate} onChange={setSupplyDate} /></View>
-                <View style={styles.col}><DatePickerField label="Tax Payment Date" optional value={taxPaymentDate} onChange={setTaxPaymentDate} /></View>
-              </View>
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Document References</Text>
-
-              {/* NEW — Original Invoice Number, only for Credit Note / Debit Note.
-                  Sits above Invoice Number so it's the first thing the user
-                  sees, matching the web's "required for Credit Notes" banner. */}
-              {isCreditOrDebitNote && (
-                <View style={styles.originalInvoiceBanner}>
-                  <View style={styles.originalInvoiceBannerHead}>
-                    <Feather name="alert-triangle" size={13} color="#b45309" />
-                    <Text style={styles.originalInvoiceBannerTitle}>
-                      Original Invoice Reference — required for {selectedType?.title ?? 'this document'}
+                    <Text style={styles.itemTotal}>
+                      Line total: {money((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0) * (1 + VAT_RATE_MAP[item.vat_rate_type] / 100))}
                     </Text>
                   </View>
-                  <TextField
-                    label="Original Invoice Number"
-                    required
-                    value={originalInvoiceNumber}
-                    onChange={setOriginalInvoiceNumber}
-                    placeholder="e.g. INV-202604-000001"
-                    maxLength={LIMIT.originalInvoice}
-                    error={detailErrors.originalInvoice}
-                  />
-                </View>
-              )}
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Invoice Number</Text>
-                <View style={styles.readonlyInput}>
-                  <Text style={styles.readonlyText}>{invoiceNo}</Text>
-                  <View style={styles.autoTag}><Feather name="zap" size={10} color="#1d4ed8" /><Text style={styles.autoTagText}>Auto</Text></View>
-                </View>
+                ))}
+                <TouchableOpacity style={styles.addItemBtn} onPress={addItem}>
+                  <Feather name="plus" size={15} color={NAVY} />
+                  <Text style={styles.addItemText}>Add Line Item</Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.row2}>
-                <View style={styles.col}><TextField label="Permit Number" value={permitNumber} onChange={setPermitNumber} placeholder="e.g. UAE-PERMIT-20" maxLength={LIMIT.permit} error={detailErrors.permit} /></View>
-                <View style={styles.col}><TextField label="Transaction ID" value={transactionId} onChange={setTransactionId} placeholder="e.g. TXN-2024-00" maxLength={LIMIT.txnId} error={detailErrors.txnId} /></View>
+              <View style={styles.totalsCard}>
+                <TotalRow label="Subtotal" value={`${currency} ${money(subtotal)}`} />
+                <TotalRow label="VAT" value={`${currency} ${money(totalVat)}`} />
+                <TotalRow label="Total" value={`${currency} ${money(grandTotal)}`} grand />
               </View>
-              <TextField label="Purchase Order Number" value={purchaseOrderNumber} onChange={setPurchaseOrderNumber} placeholder="Buyer PO reference" maxLength={LIMIT.po} error={detailErrors.po} />
-              <TextField label="GL / Account ID" required value={glAccountId} onChange={setGlAccountId} placeholder="e.g. GL-4100 or AR-001" maxLength={LIMIT.gl} error={glAccountId.trim() ? detailErrors.gl : undefined} />
-            </View>
-
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Currency & Financials</Text>
-              <SelectField label="Currency" required value={currency} options={CURRENCIES} onChange={(v) => setCurrency(v as Currency)} />
-              <View style={styles.field}>
-                <Text style={styles.label}>Exchange Rate to AED</Text>
-                <View style={styles.readonlyInput}><Text style={styles.readonlyText}>1.000000</Text></View>
-              </View>
-              <TextField label="Invoice Discount" value={discountAmount} onChange={(v) => setDiscountAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.discount} error={detailErrors.discount} />
-              <TextField label="Notes" value={notes} onChange={setNotes} placeholder="Optional notes…" multiline maxLength={LIMIT.notes} />
-            </View>
-          </>
-        )}
-
-        {/* ══ Step 4 — Print Code (QR) ══ */}
-        {step === 4 && (
-          <View style={styles.card}>
-            <View style={styles.qrHeadRow}>
-              <Feather name="check-circle" size={18} color={GREEN} />
-              <Text style={styles.qrHeadText}>Verification code ready</Text>
-            </View>
-            <Text style={styles.qrDesc}>
-              This QR encodes the invoice number, seller & buyer TRN, total amount and date. Anyone can scan it to verify the invoice is genuine.
-            </Text>
-            <View style={styles.qrBox}>
-              <QRCode value={qrData} size={170} />
-            </View>
-            <View style={styles.qrInfo}>
-              <Text style={styles.qrInfoLine}>Invoice: <Text style={styles.qrInfoStrong}>{invoiceNo}</Text></Text>
-              <Text style={styles.qrInfoLine}>Total: <Text style={styles.qrInfoStrong}>{currency} {money(grandTotal)}</Text></Text>
-            </View>
-          </View>
-        )}
-
-        {/* ══ Step 5 — Review ══ */}
-        {step === 5 && (
-          <>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Review</Text>
-              <ReviewRow label="Invoice #" value={invoiceNo} />
-              {isCreditOrDebitNote && (
-                <ReviewRow label="Original Invoice #" value={originalInvoiceNumber || '—'} />
-              )}
-              <ReviewRow label="Supplier" value={selectedCompany?.name ?? '—'} />
-              <ReviewRow label="Supplier location" value={supplierLocation || '—'} />
-              <ReviewRow label="AR / AP" value={AR_AP_OPTIONS.find((o) => o.value === arType)?.label ?? '—'} />
-              <ReviewRow label="Customer" value={selectedCustomer?.name ?? '—'} />
-              <ReviewRow label="Customer location" value={customerLocation || '—'} />
-              <ReviewRow label="Transaction" value={transactionType.toUpperCase()} />
-              <ReviewRow label="Issue date" value={issueDate || '—'} />
-              {dueDate ? <ReviewRow label="Due date" value={dueDate} /> : null}
-              <ReviewRow label="GL / Account ID" value={glAccountId || '—'} />
-              <ReviewRow label="Items" value={String(items.filter((i) => i.description.trim()).length)} />
-            </View>
-            <View style={styles.totalsCard}>
-              <TotalRow label="Subtotal" value={`${currency} ${money(subtotal)}`} />
-              {discount > 0 && <TotalRow label="Discount" value={`− ${currency} ${money(discount)}`} />}
-              {discount > 0 && <TotalRow label="Taxable" value={`${currency} ${money(taxable)}`} />}
-              <TotalRow label="VAT" value={`${currency} ${money(totalVat)}`} />
-              <TotalRow label="Total" value={`${currency} ${money(grandTotal)}`} grand />
-            </View>
-          </>
-        )}
-
-        <View style={{ height: 20 }} />
-      </KeyboardAwareScrollView>
-
-      {/* Footer nav — hidden while a picker sheet is open */}
-      {!pickerOpen && (
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
-          <TouchableOpacity style={styles.backBtn} onPress={goBack} disabled={isPending}>
-            <Text style={styles.backBtnText}>{step === 0 ? 'Cancel' : '‹ Back'}</Text>
-          </TouchableOpacity>
-          {isLast ? (
-            <TouchableOpacity style={[styles.nextBtn, isPending && { opacity: 0.6 }]} onPress={handleSubmit} disabled={isPending}>
-              <Feather name="check" size={16} color="#fff" />
-              <Text style={styles.nextBtnText}>Submit & Create Invoice</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.nextBtn} onPress={goNext}>
-              <Text style={styles.nextBtnText}>Next</Text>
-              <Feather name="arrow-right" size={16} color="#fff" />
-            </TouchableOpacity>
+            </>
           )}
-        </View>
-      )}
 
-      {/* Submitting overlay */}
-      <Modal visible={isPending} transparent animationType="fade">
-        <View style={styles.submitOverlay}>
-          <View style={styles.submitCard}>
-            <ActivityIndicator size="large" color={NAVY} />
-            <Text style={styles.submitTitle}>Creating your invoice…</Text>
-            <Text style={styles.submitSub}>Securely saving your invoice. Please don't close this screen.</Text>
+          {/* ══ Step 3 — Details ══ */}
+          {step === 3 && (
+            <>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Invoice Dates</Text>
+                <View style={styles.row2}>
+                  <View style={styles.col}><DatePickerField label="Issue Date" required value={issueDate} onChange={setIssueDate} /></View>
+                  <View style={styles.col}><DatePickerField label="Due Date" optional value={dueDate} onChange={setDueDate} /></View>
+                </View>
+                <View style={styles.row2}>
+                  <View style={styles.col}><DatePickerField label="Date of Supply" optional value={supplyDate} onChange={setSupplyDate} /></View>
+                  <View style={styles.col}><DatePickerField label="Tax Payment Date" optional value={taxPaymentDate} onChange={setTaxPaymentDate} /></View>
+                </View>
+              </View>
+
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Document References</Text>
+
+                {isCreditOrDebitNote && (
+                  <View style={styles.originalInvoiceBanner}>
+                    <View style={styles.originalInvoiceBannerHead}>
+                      <Feather name="alert-triangle" size={13} color="#b45309" />
+                      <Text style={styles.originalInvoiceBannerTitle}>
+                        Original Invoice Reference — required for {selectedType?.title ?? 'this document'}
+                      </Text>
+                    </View>
+                    <TextField
+                      label="Original Invoice Number"
+                      required
+                      value={originalInvoiceNumber}
+                      onChange={setOriginalInvoiceNumber}
+                      placeholder="e.g. INV-202604-000001"
+                      maxLength={LIMIT.originalInvoice}
+                      error={detailErrors.originalInvoice}
+                    />
+                  </View>
+                )}
+
+                <View style={styles.field}>
+                  <Text style={styles.label}>Invoice Number</Text>
+                  <View style={styles.readonlyInput}>
+                    <Text style={styles.readonlyText}>{invoiceNo}</Text>
+                    <View style={styles.autoTag}><Feather name="zap" size={10} color="#1d4ed8" /><Text style={styles.autoTagText}>Auto</Text></View>
+                  </View>
+                </View>
+
+                {/* ── UPDATED: All three now required ── */}
+                <View style={styles.row2}>
+                  <View style={styles.col}>
+                    <TextField
+                      label="Permit Number"
+                      required
+                      value={permitNumber}
+                      onChange={setPermitNumber}
+                      placeholder="e.g. UAE-PERMIT-20"
+                      maxLength={LIMIT.permit}
+                      error={detailErrors.permit}
+                    />
+                  </View>
+                  <View style={styles.col}>
+                    <TextField
+                      label="Transaction ID"
+                      required
+                      value={transactionId}
+                      onChange={setTransactionId}
+                      placeholder="e.g. TXN-2024-00"
+                      maxLength={LIMIT.txnId}
+                      error={detailErrors.txnId}
+                    />
+                  </View>
+                </View>
+                <TextField
+                  label="Purchase Order Number"
+                  required
+                  value={purchaseOrderNumber}
+                  onChange={setPurchaseOrderNumber}
+                  placeholder="Buyer PO reference"
+                  maxLength={LIMIT.po}
+                  error={detailErrors.po}
+                />
+                <TextField
+                  label="GL / Account ID"
+                  required
+                  value={glAccountId}
+                  onChange={setGlAccountId}
+                  placeholder="e.g. GL-4100 or AR-001"
+                  maxLength={LIMIT.gl}
+                  error={glAccountId.trim() ? detailErrors.gl : undefined}
+                />
+              </View>
+
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Currency & Financials</Text>
+                <SelectField label="Currency" required value={currency} options={CURRENCIES} onChange={(v) => setCurrency(v as Currency)} />
+                <View style={styles.field}>
+                  <Text style={styles.label}>Exchange Rate to AED</Text>
+                  <View style={styles.readonlyInput}><Text style={styles.readonlyText}>1.000000</Text></View>
+                </View>
+                <TextField label="Invoice Discount" value={discountAmount} onChange={(v) => setDiscountAmount(v.replace(/[^0-9.]/g, ''))} keyboardType="decimal-pad" placeholder="0.00" maxLength={LIMIT.discount} error={detailErrors.discount} />
+                <TextField label="Notes" value={notes} onChange={setNotes} placeholder="Optional notes…" multiline maxLength={LIMIT.notes} />
+              </View>
+            </>
+          )}
+
+          {/* ══ Step 4 — Print Code (QR) ══ */}
+          {step === 4 && (
+            <View style={styles.card}>
+              <View style={styles.qrHeadRow}>
+                <Feather name="check-circle" size={18} color={GREEN} />
+                <Text style={styles.qrHeadText}>Verification code ready</Text>
+              </View>
+              <Text style={styles.qrDesc}>
+                This QR encodes the invoice number, seller & buyer TRN, total amount and date. Anyone can scan it to verify the invoice is genuine.
+              </Text>
+              <View style={styles.qrBox}>
+                <QRCode value={qrData} size={170} />
+              </View>
+              <View style={styles.qrInfo}>
+                <Text style={styles.qrInfoLine}>Invoice: <Text style={styles.qrInfoStrong}>{invoiceNo}</Text></Text>
+                <Text style={styles.qrInfoLine}>Total: <Text style={styles.qrInfoStrong}>{currency} {money(grandTotal)}</Text></Text>
+              </View>
+            </View>
+          )}
+
+          {/* ══ Step 5 — Review ══ */}
+          {step === 5 && (
+            <>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Review</Text>
+                <ReviewRow label="Invoice #" value={invoiceNo} />
+                {isCreditOrDebitNote && (
+                  <ReviewRow label="Original Invoice #" value={originalInvoiceNumber || '—'} />
+                )}
+                <ReviewRow label="Supplier" value={selectedCompany?.name ?? '—'} />
+                <ReviewRow label="Supplier location" value={supplierLocation || '—'} />
+                <ReviewRow label="AR / AP" value={AR_AP_OPTIONS.find((o) => o.value === arType)?.label ?? '—'} />
+                <ReviewRow label="Customer" value={selectedCustomer?.name ?? '—'} />
+                <ReviewRow label="Customer location" value={customerLocation || '—'} />
+                <ReviewRow label="Transaction" value={transactionType.toUpperCase()} />
+                <ReviewRow label="Issue date" value={issueDate || '—'} />
+                {dueDate ? <ReviewRow label="Due date" value={dueDate} /> : null}
+                <ReviewRow label="Permit Number" value={permitNumber || '—'} />
+                <ReviewRow label="Transaction ID" value={transactionId || '—'} />
+                <ReviewRow label="Purchase Order #" value={purchaseOrderNumber || '—'} />
+                <ReviewRow label="GL / Account ID" value={glAccountId || '—'} />
+                <ReviewRow label="Items" value={String(items.filter((i) => i.description.trim()).length)} />
+              </View>
+              <View style={styles.totalsCard}>
+                <TotalRow label="Subtotal" value={`${currency} ${money(subtotal)}`} />
+                {discount > 0 && <TotalRow label="Discount" value={`− ${currency} ${money(discount)}`} />}
+                {discount > 0 && <TotalRow label="Taxable" value={`${currency} ${money(taxable)}`} />}
+                <TotalRow label="VAT" value={`${currency} ${money(totalVat)}`} />
+                <TotalRow label="Total" value={`${currency} ${money(grandTotal)}`} grand />
+              </View>
+            </>
+          )}
+
+          <View style={{ height: 20 }} />
+        </KeyboardAwareScrollView>
+
+        {/* Footer nav */}
+        {!pickerOpen && (
+          <View style={[styles.footer, { paddingBottom: insets.bottom + 10 }]}>
+            <TouchableOpacity style={styles.backBtn} onPress={goBack} disabled={isPending}>
+              <Text style={styles.backBtnText}>{step === 0 ? 'Cancel' : '‹ Back'}</Text>
+            </TouchableOpacity>
+            {isLast ? (
+              <TouchableOpacity style={[styles.nextBtn, isPending && { opacity: 0.6 }]} onPress={handleSubmit} disabled={isPending}>
+                <Feather name="check" size={16} color="#fff" />
+                <Text style={styles.nextBtnText}>Submit & Create Invoice</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.nextBtn} onPress={goNext}>
+                <Text style={styles.nextBtnText}>Next</Text>
+                <Feather name="arrow-right" size={16} color="#fff" />
+              </TouchableOpacity>
+            )}
           </View>
-        </View>
-      </Modal>
-    </View>
+        )}
+
+        {/* Submitting overlay */}
+        <Modal visible={isPending} transparent animationType="fade">
+          <View style={styles.submitOverlay}>
+            <View style={styles.submitCard}>
+              <ActivityIndicator size="large" color={NAVY} />
+              <Text style={styles.submitTitle}>Creating your invoice…</Text>
+              <Text style={styles.submitSub}>Securely saving your invoice. Please don't close this screen.</Text>
+            </View>
+          </View>
+        </Modal>
+      </View>
     </PickerCtx.Provider>
   );
 }
@@ -1022,7 +1050,6 @@ function SelectField({
           <Text style={styles.hintText}>{hint}</Text>
         </View>
       )}
-
       <Modal visible={open} transparent animationType="slide" onRequestClose={closeSheet}>
         <Pressable style={styles.modalOverlay} onPress={closeSheet}>
           <Pressable style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]} onPress={(e) => e.stopPropagation()}>
@@ -1106,10 +1133,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: BORDER, padding: 16, marginBottom: 14 },
   cardTitle: { fontSize: 15, fontWeight: '800', color: NAVY, marginBottom: 12 },
 
-  typeBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#0a2540', borderRadius: 14, padding: 14, marginBottom: 14,
-  },
+  typeBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#0a2540', borderRadius: 14, padding: 14, marginBottom: 14 },
   typeBannerIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
   typeBannerTitle: { fontSize: 15, fontWeight: '800', color: '#fff' },
   typeBannerSub: { fontSize: 12, color: '#cbd5e1', marginTop: 2 },
@@ -1149,11 +1173,7 @@ const styles = StyleSheet.create({
   hintRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 5 },
   hintText: { fontSize: 12, color: '#b45309', fontWeight: '600' },
 
-  // NEW — Original Invoice Number banner (Credit Note / Debit Note only)
-  originalInvoiceBanner: {
-    backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fcd34d',
-    borderRadius: 12, padding: 14, marginBottom: 16,
-  },
+  originalInvoiceBanner: { backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fcd34d', borderRadius: 12, padding: 14, marginBottom: 16 },
   originalInvoiceBannerHead: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   originalInvoiceBannerTitle: { fontSize: 12.5, fontWeight: '700', color: '#b45309', flex: 1, flexWrap: 'wrap' },
 
