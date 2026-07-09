@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "enumerak-app",
+    "name": "E-Numerak",
     "slug": "enumerak-app",
     "scheme": "enumerak",
     "version": "1.0.0",
@@ -11,19 +11,20 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1e3a5f"
+      "backgroundColor": "#0a2540"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.almerak.enumerak"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1e3a5f"
+        "backgroundColor": "#0a2540"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.enumerakapp"
+      "package": "com.almerak.enumerak"
     },
     "web": {
       "favicon": "./assets/favicon.png"
